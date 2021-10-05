@@ -1,0 +1,239 @@
+---
+title: "SimulationOverview"
+author: "Janica Bühler"
+date: "4 Juni 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(plyr)
+library(dplyr)
+library(tidyverse)
+library(zoo)
+library(TeachingDemos)
+library(nest)
+
+```
+
+```{r}
+load("Data/Timeseries_SISAL1k.RData")
+
+# Age limits
+xlimz<-c(-1200,100)
+
+# Number of timeseries in the plot
+num_ts <- 6
+
+# Set layout:
+COLZ = c(rgb(112,160,205, max = 255), rgb(0,52,102, max = 255), rgb(178,178,178, max = 255),rgb(0,121,0, max = 255), rgb(196,121,0, max = 255))
+
+# Set standard colors for the timeseries
+col_hadcm3_temp <- "darkblue"
+col_pages2k <- rgb(227, 26, 28, maxColorValue = 255)#"maroon"#"lawngreen"
+
+col_hadcm3_d18O <- "#59a900"
+col_d18O_240 <- "#1f78b4"
+col_d18O_242 <- "#a6cee3"
+
+col_co2 <- "firebrick3"
+col_volc <- "gray50"
+col_solar <- "orange"
+
+col_bunker = rgb(227, 26, 28, maxColorValue = 255)
+
+COLZ_solar <- rev(c(rgb(254, 204, 92, maxColorValue = 255),
+                rgb(253, 141, 60, maxColorValue = 255),
+                rgb(227, 26, 28, maxColorValue = 255)))
+COLZ_c02 <- c(rgb(49, 163, 84, maxColorValue = 255),
+              rgb(173, 221, 142, maxColorValue = 255))
+COLZ_volc <- c(rgb(44, 127, 184, maxColorValue = 255),
+               rgb(127, 205, 187, maxColorValue = 255))
+
+
+# Settings for size of axes, units, and names
+axisnumscex <- 1.1 #0.75
+axslinno <- 1.1 #0.75
+unitscex <- 1.1 #0.75
+unitslinno <- 5 #2.5
+namlin <- 1 #0.5
+namcex <- 1.1 #1
+box_color = "grey90"
+```
+
+
+```{r}
+pdf(width=10,height=10,file="Plots/Fig_1_Timeseries.pdf")
+# Set margins, out margin, axes styles, standard text size, and line width
+par(mar=c(0,0,0,0),oma=c(0,16,6,12),xaxs="i",yaxs="i",cex=1,lwd=2)
+
+# The first row denotes the header (e.g. names of geologic periods), the remaining rows correspond to the individual timeseries plots
+layout(matrix(rep(1:(num_ts+1),each=2),num_ts+1,2,byrow=TRUE),heights=c(0.2,1,1,1))
+
+#HEADER
+# Start plot
+plot(xlimz,c(0,1),axes=FALSE,type="n",xlab="",ylab="")
+rect(-1*(1950-1240), par('usr')[3], -1*(1950-1280), par('usr')[4], col = box_color, border = NA)
+rect(-1*(1950-1430), par('usr')[3], -1*(1950-1470), par('usr')[4], col = box_color, border = NA)
+rect(-1*(1950-1795), par('usr')[3], -1*(1950-1835), par('usr')[4], col = box_color, border = NA)
+# Lines to mark LIA and MCA
+arrows(x0=-100,x1=-400,y0=0.01,y1=0.01,code=3,angle=90,length=0.025,col="black")
+arrows(x0=-700,x1=-1000,y0=0.01,y1=0.01,code=3,angle=90,length=0.025,col="black")
+# Text for MIS3, Holocene, and LGM
+text(mean(c(-100,-400)),0.5,"LIA",col="black",cex=namcex)
+text(mean(c(-700,-1000)),0.5,"MCA",col="black",cex=namcex)
+# Add top axis
+mtext(side=3,line=3,"time [y CE]",cex=unitscex)
+tmp.y <- TeachingDemos::cnvrt.coords(x=NA,y=par('usr')[4])$dev$y
+axis(3,at=seq(-1050,50,by=200),labels=FALSE)
+mtext(side=3,at=seq(-1050,50,by=200),seq(900,1900,by=200),line=0.5,cex=axisnumscex)
+
+# 1: Temperature
+# y-axis extent:
+range_temp <- c(-1.5,1.0)
+# Start plot
+plot(xlimz,range_temp,axes=FALSE,type="n",xlab="",ylab="")
+rect(-1*(1950-1240), par('usr')[3], -1*(1950-1280), par('usr')[4], col = box_color, border = NA)
+rect(-1*(1950-1430), par('usr')[3], -1*(1950-1470), par('usr')[4], col = box_color, border = NA)
+rect(-1*(1950-1795), par('usr')[3], -1*(1950-1835), par('usr')[4], col = box_color, border = NA)
+
+models = c("ECHAM5", "GISS", "CESM", "HadCM3", "isoGSM")
+for(ii in 1:5){
+  lines(zoo(x = Timeseries_SISAL1k$Models$TEMP[[models[ii]]]-mean(Timeseries_SISAL1k$Models$TEMP[[models[ii]]],na.rm = T),order.by = seq(-1100, -100,by=1)), type ="l", col = adjustcolor(COLZ[ii],0.3))
+  lines(gaussdetr(zoo(x = na.omit(Timeseries_SISAL1k$Models$TEMP[[models[ii]]]-mean(Timeseries_SISAL1k$Models$TEMP[[models[ii]]],na.rm = T)),order.by = seq(-1100, -100,by=1)[!is.na(Timeseries_SISAL1k$Models$TEMP[[models[ii]]])]), tsc.in = 100)$Xsmooth, type ="l", col = COLZ[ii])
+}
+
+lines(Timeseries_SISAL1k$pages2k$time[850:2000], 
+      Timeseries_SISAL1k$pages2k$value[850:2000]-mean(Timeseries_SISAL1k$pages2k$value[c(850:1850)]), 
+      type = "l", col = adjustcolor(col_pages2k,0.3))
+lines(gaussdetr(zoo(x = Timeseries_SISAL1k$pages2k$value[850:2000]-mean(Timeseries_SISAL1k$pages2k$value[c(850:1850)]),
+                    order.by = Timeseries_SISAL1k$pages2k$time[850:2000]), tsc.in = 100)$Xsmooth,type = "l", col = col_pages2k, lw = 3)
+
+lines(Timeseries_SISAL1k$HadCRUT4-mean(Timeseries_SISAL1k$pages2k$value[c(850:1850)]), type = "l", col = adjustcolor("black", 0.3))
+lines(gaussdetr(Timeseries_SISAL1k$HadCRUT4-mean(Timeseries_SISAL1k$pages2k$value[c(850:1850)]), tsc.in = 100)$Xsmooth, type = "l", col = "black", lw = 3)
+
+
+# Add proxy name (on left side)
+mtext(side=2,"GMST anomaly",cex = unitscex, line = unitslinno,   las = 1, col = "black",         at = 1)
+mtext(side=2,"[° C]",       cex = unitscex, line = unitslinno,   las = 1, col = "black",         at = 0.5)
+mtext(side=2,"PAGES2k",     cex = namcex,   line = namlin+4,     las = 1, col = col_pages2k,     at = -0)
+mtext(side=2,"HadCRUT4",    cex = namcex,   line = namlin+4,     las = 1, col = "black",         at = -0.5)
+
+start_at = 0
+mtext(side=4,"Models:", cex = namcex,   line = namlin,     las = 1, col = "black", at = start_at+0.5)
+mtext(side=4,"ECHAM5-wiso", cex = namcex,   line = namlin,     las = 1, col = COLZ[1], at = start_at)
+mtext(side=4,"GISS-E2-R", cex = namcex,   line = namlin,     las = 1, col = COLZ[2], at = start_at-0.5)
+mtext(side=4,"iCESM", cex = namcex,   line = namlin,     las = 1, col = COLZ[3], at = start_at-1)
+mtext(side=4,"iHadCM3", cex = namcex,   line = namlin,     las = 1, col = COLZ[4], at = start_at-1.5)
+mtext(side=4,"isoGSM", cex = namcex,   line = namlin,     las = 1, col = COLZ[5], at = start_at-2)
+
+# Add units (on right side)
+
+# Add axis (on right side)
+axis(2,at=seq(-1,1,by=0.5),labels=FALSE,col="black")
+mtext(side=2,at=seq(-1,1,by=1),seq(-1,1,by=1),line=axslinno,las=1,cex=axisnumscex,col="black")
+text(-1100, 0.8, "(a)", cex = namcex+0.5, col = "black")
+
+# 2: d18O
+
+range_d18O <- c(-10.5, -5)
+#range_d18O <- c(-9, -5)
+plot(xlimz,range_d18O,axes=FALSE,type="n",xlab="",ylab="")
+rect(-1*(1950-1240), par('usr')[3], -1*(1950-1280), par('usr')[4], col = box_color, border = NA)
+rect(-1*(1950-1430), par('usr')[3], -1*(1950-1470), par('usr')[4], col = box_color, border = NA)
+rect(-1*(1950-1795), par('usr')[3], -1*(1950-1835), par('usr')[4], col = box_color, border = NA)
+
+for(ii in 1:5){
+  #lines(zoo(x = GlobalMean$ISOT[[models[ii]]],order.by = seq(-1100, -100,by=1)), type ="l", col = adjustcolor(COLZ[ii],0.3))
+  #lines(gaussdetr(zoo(x = na.omit(GlobalMean$ISOT[[models[ii]]]),order.by = seq(-1100, -100,by=1)[!is.na(GlobalMean$ISOT[[models[ii]]])]), tsc.in = 100)$Xsmooth, type ="l", col = COLZ[ii])
+  lines(Timeseries_SISAL1k$Bunker[[ii]], type = "l", col = adjustcolor(COLZ[ii], 0.3))
+  lines(gaussdetr(Timeseries_SISAL1k$Bunker[[ii]], tsc.in = 100)$Xsmooth, type = "l", col = COLZ[ii])
+}
+
+lines(Timeseries_SISAL1k$Bunker[[6]], type = "l", col = adjustcolor(col_bunker, 0.3))
+lines(gaussdetr(Timeseries_SISAL1k$Bunker[[6]], tsc.in = 100)$Xsmooth, type = "l", col = col_bunker)
+
+axis(2,col="black",at=seq(-9,-6),labels=FALSE)
+mtext(side=2,col="black",at=c(-9,-7),c(-9,-7),line=axslinno,las=1,cex=axisnumscex)
+#mtext(side=2,expression(paste("GM [",delta^{plain(18)}, plain(O),"]")),cex=unitscex,col="black",line=unitslinno,las=1, at = -8.5)
+mtext(side=2,expression(paste("Bunker cave")),cex=unitscex,col="black",line=unitslinno,las=1, at = -5.5)
+mtext(side=2,expression(paste(delta^{plain(18)}, plain(O)," [permil]")),cex=unitscex,col="black",line=unitslinno,las=1, at = -6.75)
+mtext(side=2,expression(paste("entity ID 240")),cex=unitscex,col=col_bunker,line=unitslinno,las=1, at = -8)
+#mtext(side=2,"GM", cex = unitscex,     col = "black",         las=1, line = unitslinno,  at = -8.5)
+text(-1100, -5.5 , "(b)",   cex = namcex+0.5,   col = "black")
+
+abline(h = -10.5, col = "black", lw = 3)
+
+
+# FORCINGS
+
+# 3: CO2
+#range_co2 = range(Timeseries$co2[index(Timeseries$co2)>-1100])
+#range_co2[1] = 250
+plot(xlimz,c(270,300),axes=FALSE,type="n",xlab="",ylab="")
+rect(-1*(1950-1240), par('usr')[3], -1*(1950-1280), par('usr')[4], col = box_color, border = NA)
+rect(-1*(1950-1430), par('usr')[3], -1*(1950-1470), par('usr')[4], col = box_color, border = NA)
+rect(-1*(1950-1795), par('usr')[3], -1*(1950-1835), par('usr')[4], col = box_color, border = NA)
+
+lines(Timeseries_SISAL1k$co2_SMT,col=COLZ_c02[1])
+lines(Timeseries_SISAL1k$co2_MFM, col = COLZ_c02[2])
+axis(2,col=COLZ_c02[1],at=c(265,270,275,280,285,290),labels=FALSE)
+mtext(side=2,col=COLZ_c02[1],at=c(270,280,290),c(270,280,290),line=axslinno,las=1,cex=axisnumscex)
+mtext(side=2,expression(paste("[",plain(ppm),"]")) ,cex=unitscex,col=COLZ_c02[1],line=unitslinno,las=1, at = 280)
+mtext(side=2,expression(plain(CO[plain(2)])),       cex=namcex,  col=COLZ_c02[1],line=unitslinno,    las=1, at = 290)
+
+mtext(side=2,expression("SMT"), cex=unitscex,  col=COLZ_c02[1],line=unitslinno+6,    las=1, at = 290)
+mtext(side=2,expression("MFM"), cex=unitscex,  col=COLZ_c02[2],line=unitslinno+6,    las=1, at = 283)
+
+text(-1100, 290 , "(c)", cex = namcex+0.5, col = COLZ_c02[1])
+
+# 4: volcanic forcing
+range_volc = range(Timeseries_SISAL1k$volc_CRW)
+plot(xlimz,range_volc,axes=FALSE,type="n",xlab="",ylab="")
+rect(-1*(1950-1240), par('usr')[3], -1*(1950-1280), par('usr')[4], col = box_color, border = NA)
+rect(-1*(1950-1430), par('usr')[3], -1*(1950-1470), par('usr')[4], col = box_color, border = NA)
+rect(-1*(1950-1795), par('usr')[3], -1*(1950-1835), par('usr')[4], col = box_color, border = NA)
+lines(Timeseries_SISAL1k$volc_CRW,col= adjustcolor(COLZ_volc[1], alpha.f = 0.8))
+lines(Timeseries_SISAL1k$volc_Gao, col = adjustcolor(COLZ_volc[2], alpha.f = 0.8))
+axis(2,col=COLZ_volc[1],at=c(0,0.25,0.5),labels=FALSE)
+text(x = -100, y = 0.5, "Tambora", col = "black", cex = namcex*1.2)
+text(x = -620, y = 0.55, "Samalas", col = "black", cex = namcex*1.2)
+mtext(side=2,col=COLZ_volc[1],at=c(0,0.25,0.5),c(0.0,0.25,0.5),line=axslinno,las=1,cex=axisnumscex)
+mtext(side=2,expression(paste("volcanic forcing")),cex=namcex,  col=COLZ_volc[1],line=unitslinno,las=1, at = 0.5)
+mtext(side=2,expression(paste("[",plain(AOD),"]")),cex=unitscex,col=COLZ_volc[1],line=unitslinno,las=1, at = 0.375)
+mtext(side=2,expression(paste("CRO")),cex=unitscex,  col=COLZ_volc[1],line=unitslinno+6,las=1, at = 0.25)
+mtext(side=2,expression(paste("GAO")),cex=unitscex,  col=COLZ_volc[2],line=unitslinno+6,las=1, at = 0.125)
+
+text(-1100, 0.5, "(d)", cex = namcex+0.5, col = COLZ_volc[1])
+
+# 4: solar forcing
+range_solar = c(1364, 1369)
+plot(xlimz,range_solar,axes=FALSE,type="n",xlab="",ylab="")
+rect(-1*(1950-1240), par('usr')[3], -1*(1950-1280), par('usr')[4], col = box_color, border = NA)
+rect(-1*(1950-1430), par('usr')[3], -1*(1950-1470), par('usr')[4], col = box_color, border = NA)
+rect(-1*(1950-1795), par('usr')[3], -1*(1950-1835), par('usr')[4], col = box_color, border = NA)
+lines(Timeseries_SISAL1k$solar_STH,col=COLZ_solar[1])
+lines(Timeseries_SISAL1k$solar_MSL, col = COLZ_solar[2])
+lines(Timeseries_SISAL1k$solar_VR, col = COLZ_solar[3])
+axis(2,col=COLZ_solar[1],at=c(1365, 1366, 1367, 1368),labels=FALSE)
+mtext(side=2,col=COLZ_solar[1],at=c(1365,1366,1367, 1368),c(1365,1366,1367, 1368),line=axslinno,las=1,cex=axisnumscex)
+mtext(side=2,expression(paste("TSI")),cex=namcex,col=COLZ_solar[1],line=unitslinno,las=1, at = 1367)
+mtext(side=2,expression(paste("[",plain("W m"^"-2"),"]")),cex=unitscex,col=COLZ_solar[1],line=unitslinno,las=1, at = 1366)
+text(-1100, 1368 , "(e)", cex = namcex+0.5, col = COLZ_solar[1])
+
+mtext(side=2,expression(paste("STH")),cex=unitscex,col=COLZ_solar[1],line=unitslinno+6,las=1, at = 1367)
+mtext(side=2,expression(paste("MSL")),cex=unitscex,col=COLZ_solar[2],line=unitslinno+6,las=1, at = 1366)
+mtext(side=2,expression(paste("VR")),cex=unitscex,col=COLZ_solar[3],line=unitslinno+6,las=1, at = 1365)
+
+
+# Bottom axis
+par(xpd=NA)
+tmp.y2 <- TeachingDemos::cnvrt.coords(x=NA, y=tmp.y, input='dev')$usr$y
+segments(c(min(xlimz),max(xlimz),min(xlimz),min(xlimz)),c(par('usr')[3],par('usr')[3],par('usr')[3],tmp.y2),c(par('usr')[1],par('usr')[2],max(xlimz),max(xlimz)),c(tmp.y2,tmp.y2,par('usr')[3],tmp.y2))
+segments(x0=c(-1000, -500, 0),x1=c(-1000, -500, 0),y1=par('usr')[3],y0=1*tmp.y2,lty=2,col="grey")
+axis(1,at=seq(-1100,50,by=100),labels=FALSE);
+mtext(side=1,at=seq(-1000,0,by=500),seq(1000,0,by=-500),line=1,cex=axisnumscex)
+mtext(side=1,line=3,"time [y BP]",cex=unitscex)
+
+dev.off()
+```
+

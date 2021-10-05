@@ -1,0 +1,354 @@
+---
+title: "SimulationOverview"
+author: "Janica Bühler"
+date: "4 Juni 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(plyr)
+library(dplyr)
+library(tidyverse)
+source("Functions/aw_mean.R")
+```
+
+
+```{r read in Data}
+#HadCM3
+load("Data/SISAL1k_MeanField_HadCM3.RData")
+isot_lyr_HadCM3 <- MEAN_FIELD$ITIF
+#load("Data/Annual_VarFields/Annual_HadCM3_ITIF.RData")
+isot_GM_HadCM3 <- simpleawmean(apply(MEAN_FIELD$ITIF,c(1,2),mean,na.rm=TRUE))
+#ECHAM5
+load("Data/SISAL1k_MeanField_ECHAM5.RData")
+isot_lyr_ECHAM5 <- MEAN_FIELD$ITIF
+#load("Data/Annual_VarFields/Annual_ECHAM5_ITIF.RData")
+isot_GM_ECHAM5 <- simpleawmean(apply(MEAN_FIELD$ITIF,c(1,2),mean,na.rm=TRUE), lats = seq(from = -90,to = 90,length.out = 48))
+#CESM
+load("Data/SISAL1k_MeanField_CESM.RData")
+isot_lyr_CESM <- MEAN_FIELD$ITIF
+#load("Data/Annual_VarFields/Annual_CESM_ITIF.RData")
+isot_GM_CESM <- simpleawmean(apply(MEAN_FIELD$ITIF,c(1,2),mean,na.rm=TRUE), lats = seq(from = -90,to = 90,length.out = 96))
+#GISS
+load("Data/SISAL1k_MeanField_GISS.RData")
+isot_lyr_GISS <- MEAN_FIELD$ITIF
+#load("Data/Annual_VarFields/Annual_GISS_ITIF.RData")
+isot_GM_GISS <- simpleawmean(apply(MEAN_FIELD$ITIF,c(1,2),mean,na.rm=TRUE), lats = seq(from = -90,to = 90,length.out = 90))
+#isoGSM
+load("Data/SISAL1k_MeanField_isoGSM.RData")
+isot_lyr_isoGSM <- MEAN_FIELD$ITIF
+#load("Data/Annual_VarFields/Annual_isoGSM_ITIF.RData")
+isot_GM_isoGSM <- simpleawmean(apply(MEAN_FIELD$ITIF,c(1,2),mean,na.rm=TRUE), lats = seq(from = -90,to = 90,length.out = 94))
+rm(MEAN_FIELD)
+```
+
+## Range Layer:
+```{r}
+library(nest)
+library(PaleoSpec)
+source("Functions/downsample_field.R")
+source("Functions/aw_mean.R")
+isot_lyr_HadCM3_ds <- downsample_field(isot_lyr_HadCM3, 96, 48)
+isot_lyr_ECHAM5_ds <- downsample_field(isot_lyr_ECHAM5, 96, 48)
+isot_lyr_isoGSM_ds <- downsample_field(isot_lyr_isoGSM, 96, 48)
+isot_lyr_GISS_ds   <- downsample_field(isot_lyr_GISS,   96, 48)
+isot_lyr_CESM_ds   <- downsample_field(isot_lyr_CESM,   96, 48)
+
+mean_lyr = (isot_lyr_HadCM3_ds + isot_lyr_ECHAM5_ds + isot_lyr_isoGSM_ds + isot_lyr_GISS_ds + isot_lyr_CESM_ds)/5
+
+GM_HadCM3 = simpleawmean(isot_lyr_HadCM3_ds, lats = seq(from = -90, to = 90, length.out = 48))
+GM_ECHAM5 = simpleawmean(isot_lyr_ECHAM5_ds, lats = seq(from = -90, to = 90, length.out = 48))
+GM_isoGSM = simpleawmean(isot_lyr_isoGSM_ds, lats = seq(from = -90, to = 90, length.out = 48))
+GM_GISS = simpleawmean(isot_lyr_GISS_ds, lats = seq(from = -90, to = 90, length.out = 48))
+GM_CESM = simpleawmean(isot_lyr_CESM_ds, lats = seq(from = -90, to = 90, length.out = 48))
+
+isot_lyr_diff <- array(dim = c(96, 48))
+isot_lyr_diff_withoutmean <- array(dim = c(96, 48))
+for(ii in 1:96){
+  for(jj in 1:48){
+    isot_lyr_diff[ii,jj] = diff(range(c(isot_lyr_HadCM3_ds[ii,jj], 
+                                        isot_lyr_ECHAM5_ds[ii,jj], 
+                                        isot_lyr_isoGSM_ds[ii,jj], 
+                                        isot_lyr_GISS_ds[ii,jj], 
+                                        isot_lyr_CESM_ds[ii,jj]), na.rm = T), na.rm = T)
+    
+    isot_lyr_diff_withoutmean[ii,jj] = diff(range(c(isot_lyr_HadCM3_ds[ii,jj]-GM_HadCM3, 
+                                                    isot_lyr_ECHAM5_ds[ii,jj]-GM_ECHAM5, 
+                                                    isot_lyr_isoGSM_ds[ii,jj]-GM_isoGSM, 
+                                                    isot_lyr_GISS_ds[ii,jj]-GM_GISS, 
+                                                    isot_lyr_CESM_ds[ii,jj]-GM_CESM), na.rm = T), na.rm = T)
+  }
+}
+
+rm(ii,jj)
+```
+
+
+#Load Model Data
+```{r}
+ENTITY_INFO <- read.csv("Data/SISAL1k_entity_info.csv")
+FULL <- list(HadCM3 = list(), ECHAM5 = list(), GISS = list(), CESM = list(), isoGSM = list())
+DOWN <- list(HadCM3 = list(), ECHAM5 = list(), GISS = list(), CESM = list(), isoGSM = list())
+for(Model in c("HadCM3", "ECHAM5", "GISS", "CESM", "isoGSM")){
+  FULL[[Model]] = read.csv(paste0("Data/SISAL1k_annual_",Model,".csv"))
+  DOWN[[Model]] = read.csv(paste0("Data/SISAL1k_ds_", Model,".csv"))
+}
+```
+
+Point Layers to be calculated
+```{r}
+length_entity <- length(ENTITY_INFO$entity_id)
+Point_Layer_ds <- list(
+  HadCM3 = data.frame(lon=numeric(length_entity), lat=numeric(length_entity), layer=numeric(length_entity), diff = numeric(length_entity)),
+  ECHAM5 = data.frame(lon=numeric(length_entity), lat=numeric(length_entity), layer=numeric(length_entity), diff = numeric(length_entity)),
+  GISS = data.frame(lon=numeric(length_entity), lat=numeric(length_entity), layer=numeric(length_entity), diff = numeric(length_entity)),
+  CESM = data.frame(lon=numeric(length_entity), lat=numeric(length_entity), layer=numeric(length_entity), diff = numeric(length_entity)),
+  isoGSM = data.frame(lon=numeric(length_entity), lat=numeric(length_entity), layer=numeric(length_entity), diff = numeric(length_entity))
+)
+
+for(Model in c("HadCM3", "ECHAM5", "GISS", "CESM", "isoGSM")){
+  for(ii in 1:length_entity){
+    entity = ENTITY_INFO$entity_id[ii]
+    data_rec = DOWN[[Model]] %>% filter(entity_id == entity)
+    Point_Layer_ds[[Model]]$lon[ii] = ENTITY_INFO$longitude[ii]
+    Point_Layer_ds[[Model]]$lat[ii] = ENTITY_INFO$latitude[ii]
+    Point_Layer_ds[[Model]]$layer[ii] = mean(data_rec$d18O_dweq, na.rm = T)
+    #Here we need the information of which weighting fits best
+    if(Model %in% c("HadCM3", "ECHAM5", "isoGSM")){
+      Point_Layer_ds[[Model]]$diff[ii] = mean(data_rec$ITIF-data_rec$d18O_dweq, na.rm = T)
+    }else{
+      Point_Layer_ds[[Model]]$diff[ii] = mean(data_rec$ITPC-data_rec$d18O_dweq, na.rm = T)
+    }
+    
+    
+  }
+}
+
+diff_range = numeric(length_entity)
+for(ii in 1:length_entity){
+  if(ii == 6){
+    diff_range[ii]  = diff(range(Point_Layer_ds$HadCM3$diff[ii],
+                               Point_Layer_ds$ECHAM5$diff[ii],
+                               Point_Layer_ds$CESM$diff[ii],
+                               Point_Layer_ds$isoGSM$diff[ii], na.rm = T))
+  }else{diff_range[ii]  = diff(range(Point_Layer_ds$HadCM3$diff[ii],
+                               Point_Layer_ds$ECHAM5$diff[ii],
+                               Point_Layer_ds$GISS$diff[ii],
+                               Point_Layer_ds$CESM$diff[ii],
+                               Point_Layer_ds$isoGSM$diff[ii], na.rm = T))
+  }
+  
+}
+
+print(paste0("The minimum range at cave location is ", round(min(diff_range, na.rm = T), digits = 2), "for entity_id ", ENTITY_INFO$entity_id[which.min(diff_range)], " at site id ", ENTITY_INFO$site_id[which.min(diff_range)]))
+print(paste0("The maximum range at cave location is ", round(max(diff_range, na.rm = T), digits = 2), "for entity_id ", ENTITY_INFO$entity_id[which.max(diff_range)], " at site id ", ENTITY_INFO$site_id[which.max(diff_range)]))
+
+```
+
+Median spread at cave site locations and median offset:
+```{r}
+No.digits = 2
+bstrap = c()
+for(n in 1:1000){
+  bstrap = c(bstrap,median(sample(diff_range,length(diff_range),replace=T), na.rm = T))
+}
+print(paste0("The median spread at cave site locations is ", round(median(diff_range, na.rm = T), digits = 2)," 90% CI: (",round(quantile(as.numeric(bstrap), probs = 0.05, na.rm = T), digits = No.digits),",",round(quantile(as.numeric(bstrap), probs = 0.95, na.rm = T), digits = No.digits),")"))
+
+tmp = c(Point_Layer_ds$HadCM3$diff, Point_Layer_ds$ECHAM5$diff, Point_Layer_ds$GISS$diff, Point_Layer_ds$CESM$diff, Point_Layer_ds$isoGSM$diff)
+bstrap = c()
+for(n in 1:1000){
+  bstrap = c(bstrap,median(sample(tmp,length(tmp),replace=T), na.rm = T))
+}
+
+print(paste0("The median offset to the simulations is ", round(median(tmp, na.rm = T), digits = 2)," 90% CI: (",round(quantile(as.numeric(bstrap), probs = 0.05, na.rm = T), digits = No.digits),",",round(quantile(as.numeric(bstrap), probs = 0.95, na.rm = T), digits = No.digits),")"))
+
+```
+
+
+
+## Plot isot
+
+```{r pressure, echo=FALSE, warning=FALSE}
+source("Functions/STACYmap_PMIL_discrete.R")
+source("Functions/isotMap_discrete.R")
+
+withoutmean = F
+
+plot_HadCM3 <- isotMap_discrete(rbind(isot_lyr_HadCM3[49:96,1:73],isot_lyr_HadCM3[1:48,1:73]),
+                       point_lyr = data.frame(lon = Point_Layer_ds$HadCM3$lon, lat = Point_Layer_ds$HadCM3$lat, layer = Point_Layer_ds$HadCM3$layer), 
+                       leg_name = expression(paste(delta^{plain(18)}, plain(O-VSMOW)," [permil]"))) +
+  theme(panel.border = element_blank(), legend.background = element_blank(), axis.text = element_blank(), legend.text = element_text(size = 10),plot.title = element_text(hjust = 0.5)) +
+  ggtitle(paste0("iHadCM3, GM: ",round(isot_GM_HadCM3, digits = 1), "permil"))
+
+#plot_HadCM3
+
+plot_ECHAM5 <- isotMap_discrete(rbind(isot_lyr_ECHAM5[49:96,1:48],isot_lyr_ECHAM5[1:48,1:48]),
+                       point_lyr = data.frame(lon = Point_Layer_ds$ECHAM5$lon, lat = Point_Layer_ds$ECHAM5$lat, layer = Point_Layer_ds$ECHAM5$layer), 
+                       leg_name = expression(paste(delta^{plain(18)}, plain(O-VSMOW)," [permil]"))) +
+  theme(panel.border = element_blank(), legend.background = element_blank(), axis.text = element_blank(), legend.text = element_text(size = 10),plot.title = element_text(hjust = 0.5)) +
+  ggtitle(paste0("ECHAM5-wiso, GM: ",round(isot_GM_ECHAM5, digits = 1), "permil"))
+
+#plot_ECHAM5
+
+plot_isoGSM <- isotMap_discrete(rbind(isot_lyr_isoGSM[97:192,1:94],isot_lyr_isoGSM[1:96,1:94]),
+                     point_lyr = data.frame(lon = Point_Layer_ds$isoGSM$lon, lat = Point_Layer_ds$isoGSM$lat, layer = Point_Layer_ds$isoGSM$layer),
+                     leg_name = expression(paste(delta^{plain(18)}, plain(O-VSMOW)," [permil]"))) +
+  theme(panel.border = element_blank(), legend.background = element_blank(), axis.text = element_blank(), legend.text = element_text(size = 10), plot.title = element_text(hjust = 0.5)) +
+  ggtitle(paste0("isoGSM, GM: ",round(isot_GM_isoGSM, digits = 1), "permil"))
+
+#plot_CCSM
+
+plot_GISS <- isotMap_discrete(rbind(isot_lyr_GISS[73:144,1:90],isot_lyr_GISS[1:72,1:90]),
+                     point_lyr = data.frame(lon = Point_Layer_ds$GISS$lon, lat = Point_Layer_ds$GISS$lat, layer = Point_Layer_ds$GISS$layer), 
+                     leg_name = expression(paste(delta^{plain(18)}, plain(O-VSMOW)," [permil]"))) +
+  theme(panel.border = element_blank(), legend.background = element_blank(), axis.text = element_blank(), legend.text = element_text(size = 10), plot.title = element_text(hjust = 0.5)) +
+  ggtitle(paste0("GISS-E2-R, GM: ",round(isot_GM_GISS, digits = 1), "permil"))
+
+#plot_GISS
+
+plot_CESM <- isotMap_discrete(rbind(isot_lyr_CESM[73:144,1:96],isot_lyr_CESM[1:72,1:96]),
+                     point_lyr = data.frame(lon = Point_Layer_ds$CESM$lon, lat = Point_Layer_ds$CESM$lat, layer = Point_Layer_ds$CESM$layer), 
+                     leg_name = expression(paste(delta^{plain(18)}, plain(O-VSMOW)," [permil]"))) +
+  theme(panel.border = element_blank(), legend.background = element_blank(), axis.text = element_blank(), legend.text = element_text(size = 10), plot.title = element_text(hjust = 0.5)) +
+  ggtitle(paste0("iCESM, GM: ",round(isot_GM_CESM, digits = 1), "permil"))
+
+
+Plot_lyr = rbind(isot_lyr_diff[49:96,1:48],isot_lyr_diff[1:48,1:48])
+Plot_lyr[Plot_lyr>25] = NA
+  
+plot_diff <- STACYmap_discrete(gridlyr =  Plot_lyr, 
+                               ptlyr = data.frame(lon = Point_Layer_ds$CESM$lon, lat = Point_Layer_ds$CESM$lat, layer = diff_range),
+                               legend_names = list(grid = expression(paste(delta^{plain(18)}, plain(O-VSMOW)," [permil]"))), graticules = T,                                colorscheme = RColorBrewer::brewer.pal(9, 'Reds'), 
+                               limits_color = list("max" = 25, "min" = 0),
+                               labels_discrete = c(0,"",5,"",10,"",15,"",20,"",25), 
+                               discrete_breaks = c(0,2.5,5,7.5, 10,12.5,15,17.5,20,22.5,25)) +
+  theme(panel.border = element_blank(), legend.background = element_blank(), 
+        axis.text = element_blank(), legend.text = element_text(size = 10),plot.title = element_text(hjust = 0.5)) +
+  ggtitle(expression(paste("Range of ",delta^{plain(18)}, plain(O))))
+
+library(ggpubr)
+plot <- ggarrange(plot_ECHAM5, plot_GISS, plot_CESM, plot_HadCM3, plot_isoGSM, plot_diff,
+                  labels = c("(a)", "(b)", "(c)", "(d)", "(e)", "(f)"),
+                  ncol = 3, nrow = 2)
+
+#plot
+plot  %>% ggsave(filename = "Plots/Fig_3_SimOverview.pdf", plot = .,
+                 width = 3*12, height = 2*8.3, units = 'cm', dpi = 'print', device = "pdf")
+plot  %>% ggsave(filename = "Plots/Fig_3_SimOverview.png", plot = ., 
+                 width = 36, height = 16, units = 'cm', dpi = 'print', device = "png")
+
+plot
+```
+
+Add some statistics:
+```{r}
+No.digits = 2
+source("Functions/aw_mean.R")
+#ITIF_GM <- list()
+load(paste0("Data/ITIF_GlobalMean.RData"))
+for(Model in c("HadCM3", "ECHAM5", "GISS", "CESM", "isoGSM")){
+  GlobalMean <- ITIF_GM[[Model]]
+  c_left = mean(as.numeric(GlobalMean), na.rm = T) - qnorm(0.95)*sd(as.numeric(GlobalMean), na.rm = T)
+  c_right = mean(as.numeric(GlobalMean), na.rm = T) + qnorm(0.95)*sd(as.numeric(GlobalMean), na.rm = T)
+  print(paste0("Global Mean (full) ", Model,": ", round(mean(as.numeric(GlobalMean), na.rm = T),digits = No.digits), "[‰],",
+                 " 90% CI: (", round(c_left, digits = No.digits), ", ", round(c_right, digits = No.digits), ")"))  
+}
+save(ITIF_GM, file = "Data/ITIF_GlobalMean.RData")
+```
+
+
+
+Here is the same for when substracting the mean from the plots
+
+## Plot isot
+
+```{r pressure, echo=FALSE, warning=FALSE}
+source("Functions/STACYmap_PMIL_discrete.R")
+
+plot_HadCM3 <- STACYmap_discrete(rbind((isot_lyr_HadCM3_ds-mean_lyr)[49:96,],(isot_lyr_HadCM3_ds-mean_lyr)[1:48,]),
+                                 legend_name = list(grid = expression(paste(delta^{plain(18)}, plain(O),"-VSMOW - mean [permil]"))),
+                                 graticules = T, colorscheme = "temp", 
+                                 limits_color = list("max" = 15, "min" = -15),
+                                 labels_discrete = c("-15", "", "-10", "", "-5", "", "0", "", "5", "", "10", "", "15"), 
+                                 discrete_breaks = c(-15,-12.5,-10,-7.5,-5,-2.5,0,2.5,5,7.5,10,12.5,15)) +
+  theme(panel.border = element_blank(), legend.background = element_blank(), axis.text = element_blank(), legend.text = element_text(size = 10),plot.title = element_text(hjust = 0.5)) +
+  ggtitle(paste0("iHadCM3, GM: ",round(simpleawmean(isot_lyr_HadCM3_ds-mean_lyr, lats = seq(from = -90,to = 90,length.out = 48)), digits = 1), "permil"))
+
+#plot_HadCM3
+
+plot_ECHAM5 <- STACYmap_discrete(rbind((isot_lyr_ECHAM5_ds-mean_lyr)[49:96,],(isot_lyr_ECHAM5_ds-mean_lyr)[1:48,]),
+                                 legend_name = list(grid = expression(paste(delta^{plain(18)}, plain(O),"-VSMOW - mean [permil]"))),
+                                 graticules = T, colorscheme = "temp", 
+                                 limits_color = list("max" = 15, "min" = -15),
+                                 labels_discrete = c("-15", "", "-10", "", "-5", "", "0", "", "5", "", "10", "", "15"), 
+                                 discrete_breaks = c(-15,-12.5,-10,-7.5,-5,-2.5,0,2.5,5,7.5,10,12.5,15)) +
+  theme(panel.border = element_blank(), legend.background = element_blank(), axis.text = element_blank(), legend.text = element_text(size = 10),plot.title = element_text(hjust = 0.5)) +
+  ggtitle(paste0("ECHAM5-wiso, GM: ",round(simpleawmean(isot_lyr_ECHAM5_ds-mean_lyr, lats = seq(from = -90,to = 90,length.out = 48)), digits = 1), "permil"))
+
+#plot_ECHAM5
+
+plot_CESM <- STACYmap_discrete(rbind((isot_lyr_CESM_ds-mean_lyr)[49:96,],(isot_lyr_CESM_ds-mean_lyr)[1:48,]),
+                               legend_name = list(grid = expression(paste(delta^{plain(18)}, plain(O),"-VSMOW - mean [permil]"))),
+                               graticules = T, colorscheme = "temp", 
+                               limits_color = list("max" = 15, "min" = -15),
+                               labels_discrete = c("-15", "", "-10", "", "-5", "", "0", "", "5", "", "10", "", "15"), 
+                               discrete_breaks = c(-15,-12.5,-10,-7.5,-5,-2.5,0,2.5,5,7.5,10,12.5,15)) +
+  theme(panel.border = element_blank(), legend.background = element_blank(), axis.text = element_blank(), legend.text = element_text(size = 10), plot.title = element_text(hjust = 0.5)) +
+  ggtitle(paste0("iCESM, GM: ",round(simpleawmean(isot_lyr_CESM_ds-mean_lyr, lats = seq(from = -90,to = 90,length.out = 48)), digits = 1), "permil"))
+  
+
+#plot_CCSM
+
+plot_GISS <- STACYmap_discrete(rbind((isot_lyr_GISS_ds-mean_lyr)[49:96,],(isot_lyr_GISS_ds-mean_lyr)[1:48,]),
+                               legend_name = list(grid = expression(paste(delta^{plain(18)}, plain(O),"-VSMOW - mean [permil]"))),
+                               graticules = T, colorscheme = "temp", 
+                               limits_color = list("max" = 15, "min" = -15),
+                               labels_discrete = c("-15", "", "-10", "", "-5", "", "0", "", "5", "", "10", "", "15"), 
+                               discrete_breaks = c(-15,-12.5,-10,-7.5,-5,-2.5,0,2.5,5,7.5,10,12.5,15)) +
+  theme(panel.border = element_blank(), legend.background = element_blank(), axis.text = element_blank(), legend.text = element_text(size = 10), plot.title = element_text(hjust = 0.5)) +
+  ggtitle(paste0("GISS-E2-R, GM: ",round(simpleawmean(isot_lyr_GISS_ds-mean_lyr, lats = seq(from = -90,to = 90,length.out = 48)), digits = 1), "permil"))
+
+#plot_GISS
+
+plot_isoGSM <- STACYmap_discrete(rbind((isot_lyr_isoGSM_ds-mean_lyr)[49:96,],(isot_lyr_isoGSM_ds-mean_lyr)[1:48,]),
+                                 legend_name = list(grid = expression(paste(delta^{plain(18)}, plain(O),"-VSMOW - mean [permil]"))),
+                                 graticules = T, colorscheme = "temp", 
+                                 limits_color = list("max" = 15, "min" = -15),
+                                 labels_discrete = c("-15", "", "-10", "", "-5", "", "0", "", "5", "", "10", "", "15"), 
+                                 discrete_breaks = c(-15,-12.5,-10,-7.5,-5,-2.5,0,2.5,5,7.5,10,12.5,15)) +
+  theme(panel.border = element_blank(), legend.background = element_blank(), axis.text = element_blank(), legend.text = element_text(size = 10), plot.title = element_text(hjust = 0.5)) +
+  ggtitle(paste0("isoGSM, GM: ",round(simpleawmean(isot_lyr_isoGSM_ds-mean_lyr, lats = seq(from = -90,to = 90,length.out = 48)), digits = 1), "permil"))
+  
+
+Plot_lyr = rbind(isot_lyr_diff[49:96,1:48],isot_lyr_diff[1:48,1:48])
+Plot_lyr[Plot_lyr>25] = NA
+  
+plot_diff <- STACYmap_discrete(gridlyr =  Plot_lyr, 
+                               ptlyr = data.frame(lon = Point_Layer_ds$CESM$lon, 
+                                                  lat = Point_Layer_ds$CESM$lat, layer = diff_range),
+                               legend_names = list(grid = expression(paste(delta^{plain(18)}, plain(O-VSMOW)," [permil]"))), 
+                               graticules = T, 
+                               colorscheme = RColorBrewer::brewer.pal(9, 'Reds'), 
+                               limits_color = list("max" = 25, "min" = 0),
+                               labels_discrete = c(0,"",5,"",10,"",15,"",20,"",25), 
+                               discrete_breaks = c(0,2.5,5,7.5, 10,12.5,15,17.5,20,22.5,25)) +
+    theme(panel.border = element_blank(), legend.background = element_blank(), 
+          axis.text = element_blank(), legend.text = element_text(size = 10),plot.title = element_text(hjust = 0.5)) +
+    ggtitle(expression(paste("Range of ",delta^{plain(18)}, plain(O))))
+
+
+
+#plot_diff
+
+library(ggpubr)
+plot <- ggarrange(plot_ECHAM5, plot_GISS, plot_CESM, plot_HadCM3, plot_isoGSM, plot_diff,
+                  labels = c("(a)", "(b)", "(c)", "(d)", "(e)", "(f)"),
+                  ncol = 3, nrow = 2)
+
+plot  %>% ggsave(filename = "Plots/Supplement/SFig_1_SimOverview_submean.pdf", plot = .,
+                 width = 3*12, height = 2*8.3, units = 'cm', dpi = 'print', device = "pdf")
+plot  %>% ggsave(filename = "Plots/Supplement/SFig_1_SimOverview_submean.png", plot = .,
+                 width = 36, height = 16, units = 'cm', dpi = 'print', device = "png")
+
+plot
+```

@@ -1,0 +1,311 @@
+---
+title: "SimulationCorrelation"
+author: "Janica Bühler"
+date: "4 Juni 2021"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+library(plyr)
+library(dplyr)
+library(tidyverse)
+library(latex2exp)
+library(zoo)
+library(nest)
+library(PaleoSpec)
+source("Functions/projection_ptlyr.R")
+source("Functions/STACYmap_PMIL_NAgrid_discrete.R")
+```
+
+
+Pointwise correlation:
+Here follows the pointwise correlation for the cave locations:
+```{r message=FALSE, warning=FALSE}
+CORR_CAVE = list()
+ENTITY_INFO <- read.csv("Data/SISAL1k_entity_info.csv")
+
+for(Model in c("HadCM3", "ECHAM5", "GISS", "CCSM", "CESM")){
+  name = Model
+  if(Model =="CCSM"){name = "isoGSM"}
+  
+  DATA <- read.csv(paste0("Data/SISAL1k_ds_",name,".csv"))
+  
+  CORR_CAVE[[Model]] <- list(entity_id = numeric(length(ENTITY_INFO$entity_id)),
+                  lon = numeric(length(ENTITY_INFO$entity_id)),
+                  lat = numeric(length(ENTITY_INFO$entity_id)))
+
+  for(var in c("TEMP", "PREC")){
+    CORR_CAVE[[Model]][[paste0("CORR_",var)]] <- numeric(length(ENTITY_INFO$entity_id))
+    CORR_CAVE[[Model]][[paste0("p_", var)]] <- numeric(length(ENTITY_INFO$entity_id))
+    for(ii in 1:length(ENTITY_INFO$entity_id)){
+      entity = ENTITY_INFO$entity_id[ii]
+      CORR_CAVE[[Model]]$entity_id[ii] = entity
+      CORR_CAVE[[Model]]$lon[ii] = ENTITY_INFO$longitude[ii]
+      CORR_CAVE[[Model]]$lat[ii] = ENTITY_INFO$latitude[ii]
+      data_rec = DATA %>% filter(entity_id == entity)
+      # zoo cannot handle objects where order.by has two elements which is why they are sorted out here (no better option found)
+      double_time <- data_rec %>% group_by(year_BP) %>% count() %>% filter(n>1)
+      data_rec <- data_rec %>% filter(!year_BP %in% double_time$year_BP)
+      if(length(data_rec$year_BP)>4){
+        record = zoo(x = data_rec$d18O_measurement, order.by = data_rec$year_BP)
+        sim = zoo(x = na.omit(data_rec[[paste0(var)]]), order.by = data_rec$year_BP[!is.na(data_rec[[paste0(var)]])])
+        sim_isot = zoo(x = na.omit(data_rec$ISOT), order.by = data_rec$year_BP[!is.na(data_rec[[paste0(var)]])])
+        COR <- nexcf_ci(record, sim)
+        COR_SIM <- nexcf_ci(sim_isot,sim)
+        
+        CORR_CAVE[[Model]][[paste0("CORR_",var)]][ii] = COR$rxy
+        CORR_CAVE[[Model]][[paste0("p_",var)]][ii] = COR$pval
+        CORR_CAVE[[Model]][[paste0("neff_",var)]][ii] = COR$neff
+        CORR_CAVE[[Model]][[paste0("neff_ratio",var)]][ii] = COR$neff/length(data_rec$d18O_measurement)
+        CORR_CAVE[[Model]][[paste0("sim_CORR_",var)]][ii] = COR$rxy
+        CORR_CAVE[[Model]][[paste0("sim_p_",var)]][ii] = COR$pval
+        CORR_CAVE[[Model]][[paste0("sim_neff_",var)]][ii] = COR$neff
+        CORR_CAVE[[Model]][[paste0("sim_neff_ratio",var)]][ii] = COR$neff/length(data_rec$d18O_measurement)
+      }else{
+        CORR_CAVE[[Model]][[paste0("CORR_",var)]][ii] = NA
+        CORR_CAVE[[Model]][[paste0("p_",var)]][ii] = NA
+        CORR_CAVE[[Model]][[paste0("neff_",var)]][ii] = NA
+        CORR_CAVE[[Model]][[paste0("neff_ratio",var)]][ii] = NA
+        CORR_CAVE[[Model]][[paste0("sim_CORR_",var)]][ii] = NA
+        CORR_CAVE[[Model]][[paste0("sim_p_",var)]][ii] = NA
+        CORR_CAVE[[Model]][[paste0("sim_neff_",var)]][ii] = NA
+        CORR_CAVE[[Model]][[paste0("sim_neff_ratio",var)]][ii] = NA
+      }
+    }
+  }
+}
+```
+
+How well do correlations agree at speleothem locations:
+```{r}
+#acl = at cave location
+for(var in c("TEMP", "PREC")){
+  MEAN_COR_acl = numeric(length(CORR_CAVE$HadCM3$entity_id))
+  for(Model in c("HadCM3", "ECHAM5", "GISS", "CCSM", "CESM")){
+    cor = CORR_CAVE[[Model]][[paste0("sim_CORR_",var)]]
+    cor[CORR_CAVE[[Model]][[paste0("sim_p_",var)]]>0.1] = 0
+    cor[is.na(cor)] = 0
+    
+    MEAN_COR_acl = MEAN_COR_acl+cor
+  }
+  
+  MEAN_COR_acl = MEAN_COR_acl/5
+  AGREE_MEAN_COR_acl = numeric(length(MEAN_COR_acl))
+  for(Model in c("HadCM3", "ECHAM5", "GISS", "CCSM", "CESM")){
+    for(ii in 1:length(MEAN_COR_acl)){
+      if(is.na(CORR_CAVE[[Model]][[paste0("sim_CORR_",var)]][ii])){next}
+      if(sign(CORR_CAVE[[Model]][[paste0("sim_CORR_",var)]][ii]) == sign(MEAN_COR_acl[ii])){AGREE_MEAN_COR_acl[ii] = AGREE_MEAN_COR_acl[ii]+1}
+    }
+  }
+  
+  print(paste0(round(100*sum(AGREE_MEAN_COR_acl>3)/length(AGREE_MEAN_COR_acl), digits = 2),"% of locations show more than 3 Models agreeing in sign with the mean for ", var))
+  print(paste0(round(100*sum(AGREE_MEAN_COR_acl>4)/length(AGREE_MEAN_COR_acl), digits = 2),"% of locations show more than 4 Models agreeing in sign with the mean for ", var))
+  
+}
+
+```
+
+
+
+
+
+Prepare the plotting layers:
+
+get an agreement plot:
+
+```{r}
+#First all plots need to be of the same resolution. For this, there is already a function:
+source("Functions/downsample_field.R")
+CORR_FIELDS <- list()
+load("Data/SISAL1k_CorrField_HadCM3.RData")
+CORR_FIELDS$HadCM3$TEMP <- downsample_field(CORR_FIELD$TEMP, 96, 48)
+CORR_FIELDS$HadCM3$TEMP_P <- downsample_field(CORR_FIELD$TEMP_P, 96, 48)
+CORR_FIELDS$HadCM3$PREC <- downsample_field(CORR_FIELD$PREC, 96, 48)
+CORR_FIELDS$HadCM3$PREC_P <- downsample_field(CORR_FIELD$PREC_P, 96, 48)
+load("Data/SISAL1k_CorrField_ECHAM5.RData")
+CORR_FIELDS$ECHAM5$TEMP <- downsample_field(CORR_FIELD$TEMP, 96, 48)
+CORR_FIELDS$ECHAM5$TEMP_P <- downsample_field(CORR_FIELD$TEMP_P, 96, 48)
+CORR_FIELDS$ECHAM5$PREC <- downsample_field(CORR_FIELD$PREC, 96, 48)
+CORR_FIELDS$ECHAM5$PREC_P <- downsample_field(CORR_FIELD$PREC_P, 96, 48)
+load("Data/SISAL1k_CorrField_isoGSM.RData")
+CORR_FIELDS$CCSM$TEMP <- downsample_field(CORR_FIELD$TEMP, 96, 48)
+CORR_FIELDS$CCSM$TEMP_P <- downsample_field(CORR_FIELD$TEMP_P, 96, 48)
+CORR_FIELDS$CCSM$PREC <- downsample_field(CORR_FIELD$PREC, 96, 48)
+CORR_FIELDS$CCSM$PREC_P <- downsample_field(CORR_FIELD$PREC_P, 96, 48)
+load("Data/SISAL1k_CorrField_CESM.RData")
+CORR_FIELDS$CESM$TEMP <- downsample_field(CORR_FIELD$TEMP, 96, 48)
+CORR_FIELDS$CESM$TEMP_P <- downsample_field(CORR_FIELD$TEMP_P, 96, 48)
+CORR_FIELDS$CESM$PREC <- downsample_field(CORR_FIELD$PREC, 96, 48)
+CORR_FIELDS$CESM$PREC_P <- downsample_field(CORR_FIELD$PREC_P, 96, 48)
+load("Data/SISAL1k_CorrField_GISS.RData")
+CORR_FIELDS$GISS$TEMP <- downsample_field(CORR_FIELD$TEMP, 96, 48)
+CORR_FIELDS$GISS$TEMP_P <- downsample_field(CORR_FIELD$TEMP_P, 96, 48)
+CORR_FIELDS$GISS$PREC <- downsample_field(CORR_FIELD$PREC, 96, 48)
+CORR_FIELDS$GISS$PREC_P <- downsample_field(CORR_FIELD$PREC_P, 96, 48)
+
+
+Model_list = c("HadCM3", "ECHAM5", "GISS", "CCSM", "CESM")
+
+AGREE = list(TEMP = array(dim = c(96,48))+0, PREC = array(dim = c(96,48))+0)
+AGREE_Points = list(TEMP = numeric(length(ENTITY_INFO$entity_id)),
+                    PREC = numeric(length(ENTITY_INFO$entity_id)))
+
+for(var in c("TEMP", "PREC")){
+  for(i in 1:(length(Model_list)-1)){
+    Model_i = Model_list[i]
+    i_data = CORR_FIELDS[[Model_i]][[var]]
+    i_data[CORR_FIELDS[[Model_i]][[paste0(var,"_P")]]>0.1] = NA
+    for(j in (i+1):length(Model_list)){
+      Model_j = Model_list[j]
+      j_data = CORR_FIELDS[[Model_j]][[var]]
+      j_data[CORR_FIELDS[[Model_j]][[paste0(var,"_P")]]>0.1] = NA
+      #models
+      for(lon in 1:96){
+        for(lat in 1:48){
+          if(is.na(i_data[lon,lat])|is.na(j_data[lon,lat])){next}
+          if(sign(i_data[lon,lat]) == sign(j_data[lon,lat])){AGREE[[var]][lon,lat] = sum(AGREE[[var]][lon,lat],1, na.rm = T)}
+        }
+      }
+      #records
+      for(entity in 1:length(ENTITY_INFO$entity_id)){
+        if(is.na(CORR_CAVE[[Model_i]][[paste0("p_",var)]][entity])|is.na(CORR_CAVE[[Model_j]][[paste0("p_",var)]][entity])){next}
+        if(CORR_CAVE[[Model_i]][[paste0("p_",var)]][entity]<0.1 & CORR_CAVE[[Model_j]][[paste0("p_",var)]][entity]<0.1){
+          if(sign(CORR_CAVE[[Model_i]][[paste0("CORR_",var)]][entity])==sign(CORR_CAVE[[Model_j]][[paste0("CORR_",var)]][entity])){
+            AGREE_Points[[var]][entity] = sum(AGREE_Points[[var]][entity],1,na.rm = T)
+          }
+        }
+      }
+    }
+  }
+}
+
+Model_list = c("HadCM3", "ECHAM5", "GISS", "CCSM", "CESM")
+AGREE_2 = list(TEMP = matrix(0,96,48), PREC = matrix(0,96,48))
+AGREE_2_Points = list(TEMP = numeric(length(ENTITY_INFO$entity_id)),
+                    PREC = numeric(length(ENTITY_INFO$entity_id)))
+
+for(Model in Model_list){
+  TMP = CORR_FIELDS[[Model]]$TEMP
+  TMP[CORR_FIELDS[[Model]]$TEMP_P>0.1] = 0
+  AGREE_2$TEMP = AGREE_2$TEMP + 1/5*TMP
+  TMP = CORR_FIELDS[[Model]]$PREC
+  TMP[CORR_FIELDS[[Model]]$PREC_P>0.1] = 0
+  AGREE_2$PREC = AGREE_2$PREC+ 1/5*TMP
+  
+  
+  TMP = CORR_CAVE[[Model]]$CORR_TEMP
+  TMP[is.na(TMP)] = 0
+  TMP[CORR_CAVE[[Model]]$p_TEMP>0.1] = 0
+  AGREE_2_Points$TEMP = AGREE_2_Points$TEMP + 1/5*TMP
+  TMP = CORR_CAVE[[Model]]$CORR_PREC
+  TMP[is.na(TMP)] = 0
+  TMP[CORR_CAVE[[Model]]$p_PREC>0.1] = 0
+  AGREE_2_Points$PREC = AGREE_2_Points$PREC + 1/5*TMP
+}
+
+
+#Mean_corr
+#sign_agreement for more than 3 models --> point
+```
+
+
+```{r}
+entity_agree <- ENTITY_INFO$entity_id[AGREE_Points$TEMP>5]
+sites_agree <- ENTITY_INFO$site_id[AGREE_Points$TEMP>5]
+#all caves here have p<0.1, but do they also have abs(c)> some specific value?
+Agree_list = list(HadCM3 = CORR_CAVE$HadCM3$CORR_TEMP[AGREE_Points$TEMP>5],
+                  ECHAM5 = CORR_CAVE$ECHAM5$CORR_TEMP[AGREE_Points$TEMP>5],
+                  GISS = CORR_CAVE$GISS$CORR_TEMP[AGREE_Points$TEMP>5],
+                  CCSM = CORR_CAVE$CCSM$CORR_TEMP[AGREE_Points$TEMP>5],
+                  CESM = CORR_CAVE$CESM$CORR_TEMP[AGREE_Points$TEMP>5])
+for(ii in 1:5){
+  Agree_list[[ii]][abs(Agree_list[[ii]])<0.15] = NA
+}
+Agree_list
+
+# that means that these have really significant correlation
+entity_agree[c(1,5,6,8,10,11)]
+sites_agree[c(1,5,6,8,10,11)]
+```
+
+
+
+plot only the agreement between the plots:
+```{r}
+plots <- list()
+for(var in c("TEMP", "PREC")){
+  Plot_lyr = AGREE_2[[var]]
+
+  ##### Point Layer
+  Point_Lyr <- as.tibble(data.frame(lon = ENTITY_INFO$longitude, lat = ENTITY_INFO$latitude, value = AGREE_2_Points[[var]])) 
+  Point_Lyr_not <- Point_Lyr %>% filter(abs(value) < 0.05)
+  Point_Lyr <- Point_Lyr %>% filter(abs(value)>0.05)
+  Point_Lyr_p <- projection_ptlyr(as.data.frame(Point_Lyr %>% select(lon,lat,value)), projection = as.character('+proj=robin +datum=WGS84'))
+  Point_Lyr_not_p <- projection_ptlyr(as.data.frame(Point_Lyr_not %>% select(lon,lat,value)), projection = as.character('+proj=robin +datum=WGS84'))
+  
+  Point_Lyr_agree <- as.tibble(data.frame(lon = ENTITY_INFO$longitude, lat = ENTITY_INFO$latitude, value = AGREE_Points[[var]])) 
+  Point_Lyr_agree <- Point_Lyr_agree %>% filter(value>7) %>% filter(lat %in% Point_Lyr$lat)
+  if(length(Point_Lyr_agree$lon)!=0){
+    Point_Lyr_agree_p <- projection_ptlyr(as.data.frame(Point_Lyr_agree %>% select(lon,lat,value)), projection = as.character('+proj=robin +datum=WGS84'))
+  }
+  
+  Point_sig <- as.tibble(data.frame(lon = rep(seq(-180+1.875,180-1.875,3.75),48), 
+                                    lat = rep(seq(90-1.875,-90+1.875,-3.75),each = 96), 
+                                    value = as.numeric(AGREE[[var]])))
+  Point_sig$value[Point_sig$value < 7] = NA
+  Point_sig_2 <- as_tibble(data.frame(lon = Point_sig$lon[!is.na(Point_sig$value)], 
+                                      lat = Point_sig$lat[!is.na(Point_sig$value)], 
+                                      value =  Point_sig$value[!is.na(Point_sig$value)]))
+  Point_sig_2_p = projection_ptlyr(as.data.frame(Point_sig_2, projection = as.character('+proj=robin +datum=WGS84')))
+
+
+  #Plot
+  GLOBAL_STACY_OPTIONS$GLOBAL_POINT_SIZE <- 3
+  NA_plot_lyr = Plot_lyr
+  NA_plot_lyr[!is.na(NA_plot_lyr)] = 0
+  NA_plot_lyr[is.na(NA_plot_lyr)] = 1
+  Plot_lyr[1,1] = 1
+  Plot_lyr[1,2] = -1
+  
+  leg_name = TeX("$\\rho (T, \\delta^{18}O)$")
+  if(var == "PREC"){leg_name = TeX("$\\rho (P, \\delta^{18}O)$")}
+
+  if(length(Point_Lyr_agree$lon)!=0){
+    
+    plots[[paste0(var,"_agree")]] <-  STACYmap_NA(gridlyr = Plot_lyr, graticules = T, colorscheme = rev(RColorBrewer::brewer.pal(9, 'RdBu')[1:8]),
+                                                NA_gridlyr = NA_plot_lyr, NA_color = "grey", legend_names = list(grid = leg_name),
+                                                labels_discrete = c("-1", "", "", "-0.5", "", "", "0", "", "", "0.5", "", "", "1"), 
+                                                discrete_breaks = seq(-1,1,length.out = 13)) +
+    geom_point(data = as.data.frame(Point_sig_2_p), aes(x = long, y = lat), shape = 3, color = adjustcolor("black", alpha.f = 0.5), size = 0.1) + 
+    geom_point(data = as.data.frame(Point_Lyr_not_p), aes(x = long, y = lat), shape = 20, color = "black", size = GLOBAL_STACY_OPTIONS$GLOBAL_POINT_SIZE-1.5) +
+    geom_point(data = as.data.frame(Point_Lyr_p), aes(x = long, y = lat, fill = layer), shape = 21, color = "black", size = GLOBAL_STACY_OPTIONS$GLOBAL_POINT_SIZE) +
+    geom_point(data = as.data.frame(Point_Lyr_agree_p), aes(x = long, y = lat), shape = 3, color = "black", size = GLOBAL_STACY_OPTIONS$GLOBAL_POINT_SIZE) +
+    theme(panel.border = element_blank(),
+          legend.background = element_blank(),
+          axis.text = element_blank(),
+          text = element_text(size = 12),
+          legend.title = element_text(size = 12))
+  
+  }else{
+    plots[[paste0(var,"_agree")]] <-  STACYmap_NA(gridlyr = Plot_lyr, graticules = T, colorscheme = rev(RColorBrewer::brewer.pal(9, 'RdBu')[1:8]),
+                                                NA_gridlyr = NA_plot_lyr, NA_color = "grey", legend_names = list(grid = leg_name),
+                                                labels_discrete = c("-1", "", "", "-0.5", "", "", "0", "", "", "0.5", "", "", "1"), 
+                                                discrete_breaks = seq(-1,1,length.out = 13)) +
+    geom_point(data = as.data.frame(Point_sig_2_p), aes(x = long, y = lat), shape = 3, color = adjustcolor("black", alpha.f = 0.5), size = 0.1) + 
+    geom_point(data = as.data.frame(Point_Lyr_not_p), aes(x = long, y = lat), shape = 20, color = "black", size = GLOBAL_STACY_OPTIONS$GLOBAL_POINT_SIZE-1.5) +
+    geom_point(data = as.data.frame(Point_Lyr_p), aes(x = long, y = lat, fill = layer), shape = 21, color = "black", size = GLOBAL_STACY_OPTIONS$GLOBAL_POINT_SIZE) +
+    theme(panel.border = element_blank(),
+          legend.background = element_blank(),
+          axis.text = element_blank(),
+          text = element_text(size = 12),
+          legend.title = element_text(size = 12))
+  
+  }
+}
+
+plot <- ggpubr::ggarrange(plots$TEMP_agree, plots$PREC_agree, labels = c("a)", "b)"), ncol = 2, nrow = 1)
+plot  %>% ggsave(filename = paste0('Fig5_SimCorrelation.pdf'), plot = ., path = 'Plots', 
+                 width = 2*10, height = 1*8, units = 'cm', dpi = 'print', device = "pdf")
+plot  %>% ggsave(filename = paste0('Fig5_SimCorrelation.png'), plot = ., path = 'Plots', 
+                 width = 2*10, height = 1*8, units = 'cm', dpi = 'print', device = "png")
+```

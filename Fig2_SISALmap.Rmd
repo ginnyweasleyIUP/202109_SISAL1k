@@ -1,0 +1,105 @@
+---
+title: "SISALmap"
+author: "Janica Bühler"
+date: "4 Juni 2021"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+library(plyr)
+library(dplyr)
+library(tidyverse)
+source("Functions/karst_map_plot.R")
+```
+
+```{r}
+# neede to plot all other sites, that are in SISALv2 but not in the analysis
+ALL_SITES <- read.csv("Data/site.csv")
+DATA_info <- read.csv("Data/SISAL1k_entity_info.csv")
+DATA_ds <- read.csv("Data/SISAL1k_ds_HadCM3.csv")
+
+mask_d13C <- logical(length(DATA_info$site_id))
+for(ii in 1:length(DATA_info$site)){
+  data_rec <- DATA_ds %>% filter(entity_id == DATA_info$entity_id[ii])
+  if(sum(is.na(data_rec$d13C_measurement))<2){
+    mask_d13C[ii] = T
+  }
+}
+
+resolution <- c()
+data_points <- c()
+for(entity in DATA_info$entity_id){
+  data_rec = DATA_ds %>% filter(entity_id == entity)
+  data_points = c(data_points, length(data_rec$year_BP))
+  resolution = c(resolution, mean(diff(data_rec$year_BP), na.rm = T))
+}
+
+resolution = as.numeric(resolution)
+data_points = as.numeric(data_points)
+
+sites_d13C  <- DATA_info$site_id[mask_d13C]
+sites_rest <- DATA_info$site_id[!mask_d13C]
+
+USED_SITES_d13C <- ALL_SITES %>% filter(site_id %in% sites_d13C)%>% distinct(site_id, longitude, latitude)
+USED_SITES_d13C <- data.frame(lon = USED_SITES_d13C$longitude, lat = USED_SITES_d13C$latitude, value = USED_SITES_d13C$site_id)
+USED_SITES_rest <- ALL_SITES  %>% filter(site_id %in% sites_rest) %>% distinct(site_id, longitude, latitude)
+USED_SITES_rest <- data.frame(lon = USED_SITES_rest$longitude, lat = USED_SITES_rest$latitude, value = USED_SITES_rest$site_id)
+NOT_SITES <- ALL_SITES %>% filter(!site_id %in% sites_d13C)  %>% filter(!site_id %in% sites_rest) %>% distinct(site_id, longitude, latitude)
+NOT_SITES <- data.frame(lon = NOT_SITES$longitude, lat = NOT_SITES$latitude, value = NOT_SITES$site_id)
+
+print(paste0("There are ",length(sites_d13C)," d13C-d18O entities from ",length(USED_SITES_d13C$lon)," sites." ))
+print(paste0("There are ",length(sites_rest)," only-d18O entities from ",length(USED_SITES_rest$lon)," sites." ))
+print(paste0("This makes a total of ", length(sites_d13C)+ length(sites_rest)," entities from ", length(USED_SITES_d13C$lon)+length(USED_SITES_rest$lon), "sites."))
+print(paste0(round(length(sites_d13C)/(length(sites_d13C)+ length(sites_rest))*100, digits = 2), "% of records have d13C and d18O."))
+
+#resolution
+
+#" 90% CI: (", round(quantile(bstrap,0.05), digits = 2), ", ", round(quantile(bstrap,0.95), digits = 2), ")"
+bstrap <- c()
+for (i in 1:2000){
+  bstrap <- c(bstrap,mean(sample(resolution,length(resolution),replace=T), na.rm = T))
+}
+print(paste0("The speleothems have an average resolution of ", round(mean(resolution, na.rm = T), digits = 2), " years, ", " 90% CI: (", round(quantile(bstrap,0.05), digits = 2), ", ", round(quantile(bstrap,0.95), digits = 2), ")"))
+bstrap <- c()
+for (i in 1:2000){
+  bstrap <- c(bstrap,median(sample(resolution,length(resolution),replace=T), na.rm = T))
+}
+print(paste0("The speleothems have a median resolution of ", round(median(resolution, na.rm = T), digits = 2), " years, ", " 90% CI: (", round(quantile(bstrap,0.05), digits = 2), ", ", round(quantile(bstrap,0.95), digits = 2), ")"))
+bstrap <- c()
+for (i in 1:2000){
+  bstrap <- c(bstrap,mean(sample(resolution[mask_d13C],length(resolution[mask_d13C]),replace=T), na.rm = T))
+}
+print(paste0("The speleothems with d13C have an average resolution of ", round(mean(resolution[mask_d13C], na.rm = T), digits = 2), " years, ", " 90% CI: (", round(quantile(bstrap,0.05), digits = 2), ", ", round(quantile(bstrap,0.95), digits = 2), ")"))
+bstrap <- c()
+for (i in 1:2000){
+  bstrap <- c(bstrap,median(sample(resolution[mask_d13C],length(resolution[mask_d13C]),replace=T), na.rm = T))
+}
+print(paste0("The speleothems with d13C have a median resolution of ", round(median(resolution[mask_d13C], na.rm = T), digits = 2), " years, ", " 90% CI: (", round(quantile(bstrap,0.05), digits = 2), ", ", round(quantile(bstrap,0.95), digits = 2), ")"))
+
+
+print(paste0("There are ", length(na.omit(DATA_ds$d18O_measurement)), " d18O measurements and ", length(na.omit(DATA_ds$d13C_measurement)), " d13C measurements"))
+print(paste0("This is an average of ", round(length(na.omit(DATA_ds$d18O_measurement))/length(sites_rest)), "d18O measurements per entity and ", round(length(na.omit(DATA_ds$d13C_measurement))/length(sites_d13C)), " d13C measurements per entity"))
+print(paste0("The highest number of measurements is in entity ", DATA_info$entity_id[which.max(data_points)], ", site ",DATA_info$site_id[which.max(data_points)]," with ", max(data_points), " measurements"))
+print(paste0("The lowest number of measurements is in entity ", DATA_info$entity_id[which.min(data_points)], " with ", min(data_points), " measurements"))
+
+```
+
+
+```{r}
+GLOBAL_STACY_OPTIONS$GLOBAL_FONT_SIZE = 10
+plot <- karst_map_plot(USED_SITES_d13C = USED_SITES_d13C,
+                       USED_SITES_rest = USED_SITES_rest,
+                       NOT_SITES = NOT_SITES, pt_size = 2.5) + 
+  theme(legend.position = c(-0.01, 0), legend.justification = c(0, 0), legend.box = 'vertical',
+        axis.text = element_blank(),
+        panel.border = element_blank(),
+        legend.text = element_text(size = 12))
+
+#plot
+plot %>% ggsave(filename = paste('Fig_2_SISALmap', 'pdf', sep = '.'), plot = ., path = 'Plots', 
+                width = 16.6, height = 9, units = 'cm', dpi = 'print', device = "pdf")
+```
+```{r}
+rm(list = ls())
+```
+
