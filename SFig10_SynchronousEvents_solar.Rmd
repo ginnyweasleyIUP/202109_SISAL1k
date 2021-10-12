@@ -1,0 +1,414 @@
+---
+title: "ESF001s"
+author: "Janica Bühler"
+date: "4 Juni 2021"
+output: html_document
+---
+```{r setup, include=FALSE}
+library(plyr)
+library(dplyr)
+library(PaleoSpec)
+library(nest)
+library(tidyverse)
+source("Functions/event_synchronization.R")
+```
+
+
+```{r}
+ENTITY_INFO <- read.csv("Data/SISAL1k_entity_info.csv")
+FULL <- list(HadCM3 = list(), ECHAM5 = list(), GISS = list(), CESM = list(), isoGSM = list())
+DOWN <- list(HadCM3 = list(), ECHAM5 = list(), GISS = list(), CESM = list(), isoGSM = list())
+for(Model in c("HadCM3", "ECHAM5", "GISS", "CESM", "isoGSM")){
+  FULL[[Model]] = read.csv(paste0("Data/SISAL1k_annual_",Model,".csv"))
+  DOWN[[Model]] = read.csv(paste0("Data/SISAL1k_ds_", Model,".csv"))
+}
+rm(Model)
+
+```
+
+
+
+SOLAR forcing:
+```{r}
+load("Data/Timeseries_SISAL1k.RData")
+
+#volc forcing:
+solar_forcing <- Timeseries_SISAL1k$solar
+
+DATA_sol = list()
+DATA_sol$time <- seq(1100,101,-1)
+DATA_sol$value_SHB <- as.numeric(Timeseries_SISAL1k$solar_STH)[1:1000]
+tmp = zoo::rollapply(as.numeric(Timeseries_SISAL1k$solar_MSL),12,mean, by = 12, na.rm = T)
+DATA_sol$value_MSL <- tmp[1:1000]
+DATA_sol$value_VRA <- as.numeric(Timeseries_SISAL1k$solar_VR)[1:1000]
+
+rm(solar_forcing)
+```
+
+
+
+```{r}
+SYNCHRO <- list(
+  speleo_oc = c(HadCM3 = list(), ECHAM5 = list(), GISS = list(), isoGSM = list(), CESM = list()),
+  speleo_o_volc = c(HadCM3 = list(), ECHAM5 = list(), GISS = list(), isoGSM = list(), CESM = list()),
+  speleo_c_volc = c(HadCM3 = list(), ECHAM5 = list(), GISS = list(), isoGSM = list(), CESM = list()),
+  sim_o_volc = c(HadCM3 = list(), ECHAM5 = list(), GISS = list(), isoGSM = list(), CESM = list()),
+  sim_o_volc_full = c(HadCM3 = list(), ECHAM5 = list(), GISS = list(), isoGSM = list(), CESM = list()),
+  entity_list = list()
+)
+
+for(Model in c("HadCM3", "ECHAM5", "GISS", "isoGSM", "CESM")){
+    if(Model %in% c("HadCM3", "GISS")){
+      data_sol <- list()
+      data_sol$time = DATA_sol$time
+      data_sol$value = DATA_sol$value_SHB
+    }else if(Model == "ECHAM5"){
+      data_sol <- list()
+      data_sol$time = DATA_sol$time
+      data_sol$value = DATA_sol$value_MSL
+    }else{
+      data_sol <- list()
+      data_sol$time = DATA_sol$time
+      data_sol$value = DATA_sol$value_VRA
+    }
+  for(entity in ENTITY_INFO$entity_id){
+    data_rec = DOWN[[Model]] %>% filter(entity_id == entity)
+    data_full = FULL[[Model]] %>% filter(entity_id == entity)
+    if(all(is.na(data_rec$d13C_measurement))){next}
+    if(all(is.na(data_rec$ISOT))&all(is.na(data_rec$ITIF))){next}
+  
+    SYNCHRO$entity_list = c(SYNCHRO$entity_list, entity)
+    #speleo_oc
+    SYNCHRO$speleo_oc[[Model]][[paste0("ENTITY",entity)]] <- list(times = list(), tau = list())
+    tmp = synchro_time(TS_1 = irr_detrend(list(time = data_rec$year_BP[!is.na(data_rec$d18O_measurement)], value = na.omit(data_rec$d18O_measurement))),
+                       TS_2 = irr_detrend(list(time = data_rec$year_BP[!is.na(data_rec$d13C_measurement)], value = na.omit(data_rec$d13C_measurement))), q = 5)
+    SYNCHRO$speleo_oc[[Model]][[paste0("ENTITY",entity)]]$times = tmp$list_time
+    SYNCHRO$speleo_oc[[Model]][[paste0("ENTITY",entity)]]$tau = tmp$tau
+    
+    for(isotope in c("o", "c")){
+      if(isotope == "o"){
+        value_here = data_rec$d18O_measurement
+      }else{
+        value_here = data_rec$d13C_measurement
+      }
+      
+      #volc
+      SYNCHRO[[paste0("speleo_",isotope,"_volc")]][[Model]][[paste0("ENTITY",entity)]] <- list(times = list(), tau = list())
+      tmp = synchro_time(TS_1 = irr_detrend(list(time = data_rec$year_BP[!is.na(value_here)], value = na.omit(value_here))),
+                         TS_2 = irr_detrend(list(time = data_sol$time, value = data_sol$value)),volc = F, q = 5)
+      SYNCHRO[[paste0("speleo_",isotope,"_volc")]][[Model]][[paste0("ENTITY",entity)]]$times = tmp$list_time
+      SYNCHRO[[paste0("speleo_",isotope,"_volc")]][[Model]][[paste0("ENTITY",entity)]]$tau = tmp$tau
+    }
+    
+    #model and volcano
+    modeled_var = "o"
+    if(all(is.na(data_rec$ITIF))){
+      var_name = "ISOT"
+    }else{
+      var_name = "ITIF"
+    }
+    
+    #volc
+    SYNCHRO[[paste0("sim_",modeled_var,"_volc")]][[Model]][[paste0("ENTITY",entity)]] <- list(times = list(), tau = list())
+    tmp = synchro_time(TS_1 = irr_detrend(list(time = data_rec$year_BP[!is.na(data_rec[[var_name]])], value = na.omit(data_rec[[var_name]]))),
+                         TS_2 = list(time = data_sol$time, value = data_sol$value),volc = F, q = 5)
+    SYNCHRO[[paste0("sim_",modeled_var,"_volc")]][[Model]][[paste0("ENTITY",entity)]]$times = tmp$list_time
+    SYNCHRO[[paste0("sim_",modeled_var,"_volc")]][[Model]][[paste0("ENTITY",entity)]]$tau = tmp$tau
+      
+    #volc full
+    SYNCHRO[[paste0("sim_",modeled_var,"_volc_full")]][[Model]][[paste0("ENTITY",entity)]] <- list(times = list(), tau = list())
+    tmp = synchro_time(TS_1 = irr_detrend(list(time = data_full$year_BP[!is.na(data_full[[var_name]])], value = na.omit(data_full[[var_name]]))),
+                         TS_2 = list(time = data_sol$time, value = data_sol$value),volc = F, q = 5)
+    SYNCHRO[[paste0("sim_",modeled_var,"_volc_full")]][[Model]][[paste0("ENTITY",entity)]]$times = tmp$list_time
+    SYNCHRO[[paste0("sim_",modeled_var,"_volc_full")]][[Model]][[paste0("ENTITY",entity)]]$tau = tmp$tau
+  }
+}
+
+rm(entity, data_rec, isotope, modeled_var)
+
+```
+
+This repeats the first step but with permutating values (the time stays the same).
+
+```{r}
+if(file.exists("Data/SYNCHRO_SIG_solar_2000.RData")){
+  load("Data/SYNCHRO_SIG_solar_2000.RData")
+}else{
+  SYNCHRO_SIG <- list(
+    speleo_oc = c(HadCM3 = list(), ECHAM5 = list(), GISS = list(), isoGSM = list(), CESM = list()),
+    speleo_o_volc = c(HadCM3 = list(), ECHAM5 = list(), GISS = list(), isoGSM = list(), CESM = list()),
+    speleo_c_volc = c(HadCM3 = list(), ECHAM5 = list(), GISS = list(), isoGSM = list(), CESM = list()),
+    sim_o_volc = c(HadCM3 = list(), ECHAM5 = list(), GISS = list(), isoGSM = list(), CESM = list()),
+    sim_o_volc_full = c(HadCM3 = list(), ECHAM5 = list(), GISS = list(), isoGSM = list(), CESM = list()),
+    entity_list = list()
+    )
+
+  for(MC_repeat in 1:2000){
+    if(MC_repeat%%10 == 1){print(MC_repeat)}
+    for(Model in c("HadCM3", "ECHAM5", "GISS", "isoGSM", "CESM")){
+      if(Model %in% c("HadCM3", "GISS")){
+        data_sol <- list()
+        data_sol$time = DATA_sol$time
+        data_sol$value = DATA_sol$value_SHB
+      }else if(Model == "ECHAM5"){
+        data_sol <- list()
+        data_sol$time = DATA_sol$time
+        data_sol$value = DATA_sol$value_MSL
+      }else{
+        data_sol <- list()
+        data_sol$time = DATA_sol$time
+        data_sol$value = DATA_sol$value_VRA
+      }
+      for(entity in ENTITY_INFO$entity_id){
+        data_rec = DOWN[[Model]] %>% filter(entity_id == entity)
+        data_full = FULL[[Model]] %>% filter(entity_id == entity)
+        if(all(is.na(data_rec$d13C_measurement))){next}
+        if(all(is.na(data_rec$ISOT))&all(is.na(data_rec$ITIF))){next}
+      
+        SYNCHRO_SIG$entity_list = c(SYNCHRO_SIG$entity_list, entity)
+        #speleo_oc
+        SYNCHRO_SIG$speleo_oc[[Model]][[paste0("ENTITY",entity)]][[MC_repeat]] <- list(times = list(), tau = list())
+        tmp = synchro_time_random.cut(TS_1 = irr_detrend(list(time = data_rec$year_BP[!is.na(data_rec$d18O_measurement)], value = na.omit(data_rec$d18O_measurement))),
+                           TS_2 = irr_detrend(list(time = data_rec$year_BP[!is.na(data_rec$d13C_measurement)], value = na.omit(data_rec$d13C_measurement))), q = 5)
+        SYNCHRO_SIG$speleo_oc[[Model]][[paste0("ENTITY",entity)]][[MC_repeat]]$times = tmp$list_time
+        SYNCHRO_SIG$speleo_oc[[Model]][[paste0("ENTITY",entity)]][[MC_repeat]]$tau = tmp$tau
+        
+        for(isotope in c("o", "c")){
+          if(isotope == "o"){
+            value_here = data_rec$d18O_measurement
+          }else{
+            value_here = data_rec$d13C_measurement
+          }
+          
+          #volc
+          SYNCHRO_SIG[[paste0("speleo_",isotope,"_volc")]][[Model]][[paste0("ENTITY",entity)]][[MC_repeat]] <- list(times = list(), tau = list())
+          tmp = synchro_time_random.cut(TS_1 = irr_detrend(list(time = data_rec$year_BP[!is.na(value_here)], value = na.omit(value_here))),
+                             TS_2 = irr_detrend(list(time = data_sol$time, value = data_sol$value)),volc = F, q = 5)
+          SYNCHRO_SIG[[paste0("speleo_",isotope,"_volc")]][[Model]][[paste0("ENTITY",entity)]][[MC_repeat]]$times = tmp$list_time
+          SYNCHRO_SIG[[paste0("speleo_",isotope,"_volc")]][[Model]][[paste0("ENTITY",entity)]][[MC_repeat]]$tau = tmp$tau
+        }
+        
+        #model and volcano
+        modeled_var = "o"
+        if(all(is.na(data_rec$ITIF))){
+          var_name = "ISOT"
+        }else{
+          var_name = "ITIF"
+        }
+      
+        #volc
+        SYNCHRO[[paste0("sim_",modeled_var,"_volc")]][[Model]][[paste0("ENTITY",entity)]] <- list(times = list(), tau = list())
+        tmp = synchro_time(TS_1 = irr_detrend(list(time = data_rec$year_BP[!is.na(data_rec[[var_name]])], value = na.omit(data_rec[[var_name]]))),
+                           TS_2 = list(time = data_sol$time, value = data_sol$value),volc = F, q = 5)
+        SYNCHRO[[paste0("sim_",modeled_var,"_volc")]][[Model]][[paste0("ENTITY",entity)]]$times = tmp$list_time
+        SYNCHRO[[paste0("sim_",modeled_var,"_volc")]][[Model]][[paste0("ENTITY",entity)]]$tau = tmp$tau
+        
+        #volc full
+        SYNCHRO[[paste0("sim_",modeled_var,"_volc_full")]][[Model]][[paste0("ENTITY",entity)]] <- list(times = list(), tau = list())
+        tmp = synchro_time(TS_1 = irr_detrend(list(time = data_full$year_BP[!is.na(data_full[[var_name]])], value = na.omit(data_full[[var_name]]))),
+                           TS_2 = list(time = data_sol$time, value = data_sol$value),volc = F, q = 5)
+        SYNCHRO[[paste0("sim_",modeled_var,"_volc_full")]][[Model]][[paste0("ENTITY",entity)]]$times = tmp$list_time
+        SYNCHRO[[paste0("sim_",modeled_var,"_volc_full")]][[Model]][[paste0("ENTITY",entity)]]$tau = tmp$tau
+        
+      }
+    }
+  }
+  
+  rm(entity, data_rec, isotope, modeled_var)
+  
+  save(SYNCHRO_SIG, file = "Data/SYNCHRO_SIG_solar_2000.RData")
+}
+```
+
+
+# Histogram bins
+Calculate histogram bins
+This also includes the bins for the determination of the significance. If the "real" count is higher than the 95% quantile of the permutated count, then the column will be plotted as non-transparent. 
+```{r}
+bin_size = 10
+bin_borders = seq(1100, 100, by = -bin_size)
+hist_real = list()
+hist_sig  = list()
+hist_sig_95  = list()
+
+for(option in c("speleo_oc", "speleo_o_volc", "speleo_c_volc", "sim_o_volc", "sim_o_volc_full")){
+  
+  hist_real[[option]] = numeric(length(bin_borders)-1)
+  hist_sig[[option]] = matrix(numeric((length(bin_borders)-1)*MC_repeat), ncol = MC_repeat)
+  hist_sig_95[[option]] = numeric(length(bin_borders)-1)
+  
+  for(time_pos in 1:(length(bin_borders)-1)){
+    for(Model in c("HadCM3", "ECHAM5", "GISS", "isoGSM", "CESM")){
+      for(entity in 1:length(SYNCHRO[[option]][[Model]])){
+        times_real = SYNCHRO[[option]][[Model]][[entity]]$times
+        if(sum(times_real>bin_borders[time_pos]&times_real<=bin_borders[time_pos-1])>0){hist_real[[option]][time_pos] = hist_real[[option]][time_pos]+1}
+        for(rep in 1:MC_repeat){
+          times_sig = SYNCHRO_SIG[[option]][[Model]][[entity]][[rep]]$times
+          if(is_empty(times_sig)){next}
+          if(sum(times_sig>bin_borders[time_pos+1]&times_sig<=bin_borders[time_pos])>0){hist_sig[[option]][time_pos,rep] = hist_sig[[option]][time_pos,rep]+1}
+        }
+      }
+    }
+  }
+  hist_sig_95[[option]] = apply(hist_sig[[option]], 1, quantile, probs = 0.95, na.rm = T)
+}
+
+```
+
+
+
+Plotting:
+```{r message=FALSE, warning=FALSE}
+
+xlimz = c(800,1900)
+col_volc <- "gray50"
+axisnumscex <- 0.75
+axslinno <- 1.1 #0.75
+unitscex <- 1.1 #0.75
+unitslinno <- 5 #2.5
+namlin <- 1 #0.5
+namcex <- 1 #1
+cex_text <- 1.3
+lwidth = 1.5
+
+
+cols = c("#B2182B", "#b2182b", "#2166ac", "grey20", RColorBrewer::brewer.pal(9, "PRGn")[2], RColorBrewer::brewer.pal(9, "PRGn")[8])
+ylimz = c(0,55)
+
+box_color = "grey90"
+
+pdf(file = paste0("Plots/Supplement/SFig_10_SynchronousEvents_solar.pdf"), width = 8, height = 5)
+par(mfrow = c(2,2), oma = c(1.5,1,0.5,0), mar = c(2, 2.5, 0, 0.5) + 0.1)
+
+#a) Speleo co
+hist_plot = hist_real$speleo_oc/2.9
+hist_trans = hist_real$speleo_oc/2.9
+
+hist_plot[hist_plot<hist_sig_95$speleo_oc/2.9] = NA
+hist_trans[!hist_plot<hist_sig_95$speleo_oc/2.9] = NA
+hist_plot[hist_plot == 0] = NA
+hist_trans[hist_trans == 0] = NA
+
+
+plot(0, ylim=ylimz, xlim = xlimz, 
+     main = "", xlab = "", ylab = "", axes = F)
+grid (NULL,NULL, lty = 6, col = "grey50") 
+axis(1,      col="black",at=c(800,1000,1200,1400,1600,1800),labels=FALSE)
+mtext(side=1,col="black",at=c(800,1000,1200,1400,1600,1800),c(800,1000,1200,1400,1600,1800),line=1,las=1,cex=axisnumscex)
+lines(1950-(bin_borders[1:(length(bin_borders)-1)]-0.5), hist_plot, col = adjustcolor(cols[1], alpha.f = 0.9), type = "h", lw = lwidth)
+lines(1950-(bin_borders[1:(length(bin_borders)-1)]-0.5), hist_trans, col = adjustcolor(cols[1], alpha.f = 0.2), type = "h", lw = lwidth)
+
+mtext(expression(paste(plain("speleo-"),delta^{plain(18)}, plain("O-"),delta^{plain(13)}, plain(C))), side = 3, line = -1.5, adj = 0.95, col = cols[1])
+mtext("   a)", side = 3, line = -1.5, adj = 0, col = "black")
+
+axis(2,col="black",      at=c(0,10,20,30,40,50),labels=FALSE)
+mtext(side=2,col="black",at=c(0,10,20,30,40,50),c("0%","10%","20%","30%","40%", "50%"),line=axslinno,las=1,cex=axisnumscex)
+
+box(col = "black")
+
+
+#b) Volc to Speleo o and speleo c
+hist_plot = hist_real$speleo_o_volc/2.9
+hist_trans = hist_real$speleo_o_volc/2.9
+
+hist_plot[hist_plot<hist_sig_95$speleo_o_volc/2.9] = NA
+hist_trans[!hist_plot<hist_sig_95$speleo_o_volc/2.9] = NA
+hist_plot[hist_plot == 0] = NA
+hist_trans[hist_trans == 0] = NA
+
+plot(0, ylim=ylimz, xlim = xlimz, main = "", xlab = "", ylab = "", axes = F)
+rect(1240, par('usr')[3], 1280, par('usr')[4], col = box_color, border = NA)
+rect(1430, par('usr')[3], 1470, par('usr')[4], col = box_color, border = NA)
+rect(1795, par('usr')[3], 1835, par('usr')[4], col = box_color, border = NA)
+grid (NULL,NULL, lty = 6, col = "grey50") 
+axis(1,      col="black",at=c(800,1000,1200,1400,1600,1800),labels=FALSE)
+mtext(side=1,col="black",at=c(800,1000,1200,1400,1600,1800),c(800,1000,1200,1400,1600,1800),line=1,las=1,cex=axisnumscex)
+lines(1950-(bin_borders[1:(length(bin_borders)-1)]-0.5), hist_plot, col = adjustcolor(cols[5], alpha.f = 0.9), type = "h", lw = lwidth)
+lines(1950-(bin_borders[1:(length(bin_borders)-1)]-0.5), hist_trans, col = adjustcolor(cols[5], alpha.f = 0.2), type = "h", lw = lwidth)
+
+hist_plot = hist_real$speleo_c_volc/2.9
+hist_trans = hist_real$speleo_c_volc/2.9
+
+hist_plot[hist_plot<hist_sig_95$speleo_c_volc/2.9] = NA
+hist_trans[!hist_plot<hist_sig_95$speleo_c_volc/2.9] = NA
+hist_plot[hist_plot == 0] = NA
+hist_trans[hist_trans == 0] = NA
+
+lines(1950-(bin_borders[1:(length(bin_borders)-1)]-0.5), hist_plot, col = adjustcolor(cols[6], alpha.f = 0.9), type = "h", lw = lwidth)
+lines(1950-(bin_borders[1:(length(bin_borders)-1)]-0.5), hist_trans, col = adjustcolor(cols[6], alpha.f = 0.2), type = "h", lw = lwidth)
+
+mtext(expression(paste(plain("solar and speleo-"),delta^{plain(18)}, plain("O"))), side = 3, line = -1.5, adj = 0.95, col = adjustcolor(cols[5], alpha.f = 0.9))
+mtext(expression(paste(plain("solar and speleo-"),delta^{plain(13)}, plain("C"))), side = 3, line = -2.5, adj = 0.95, col = adjustcolor(cols[6], alpha.f = 0.9))
+mtext("   b)", side = 3, line = -1.5, adj = 0, col = "black")
+
+axis(2,col="black",      at=c(0,10,20,30,40,50),labels=FALSE)
+mtext(side=2,col="black",at=c(0,10,20,30,40,50),c("0%","10%","20%","30%","40%", "50%"),line=axslinno,las=1,cex=axisnumscex)
+
+box(col = "black")
+
+#c) downsampled simulation and volcano
+
+hist_plot = hist_real$sim_o_volc/2.9
+hist_trans = hist_real$sim_o_volc/2.9
+
+hist_plot[hist_plot<hist_sig_95$sim_o_volc/2.9] = NA
+hist_trans[!hist_plot<hist_sig_95$sim_o_volc/2.9] = NA
+hist_plot[hist_plot == 0] = NA
+hist_trans[hist_trans == 0] = NA
+
+plot(0, ylim=ylimz, xlim = xlimz, 
+     main = "", xlab = "", ylab = "", axes = F)
+rect(1240, par('usr')[3], 1280, par('usr')[4], col = box_color, border = NA)
+rect(1430, par('usr')[3], 1470, par('usr')[4], col = box_color, border = NA)
+rect(1795, par('usr')[3], 1835, par('usr')[4], col = box_color, border = NA)
+grid (NULL,NULL, lty = 6, col = "grey50") 
+axis(1,      col="black",at=c(800,1000,1200,1400,1600,1800),labels=FALSE)
+mtext(side=1,col="black",at=c(800,1000,1200,1400,1600,1800),c(800,1000,1200,1400,1600,1800),line=1,las=1,cex=axisnumscex)
+lines(1950-(bin_borders[1:(length(bin_borders)-1)]-0.5), hist_plot, col = adjustcolor(cols[3], alpha.f = 0.9), type = "h", lw = lwidth)
+lines(1950-(bin_borders[1:(length(bin_borders)-1)]-0.5), hist_trans, col = adjustcolor(cols[3], alpha.f = 0.2), type = "h", lw = lwidth)
+
+mtext(expression(paste(plain("solar and sim-"),delta^{plain(18)}, plain("O (ds)"))), side = 3, line = -1.5, adj = 0.95, col = cols[3])
+mtext("   c)", side = 3, line = -1.5, adj = 0, col = "black")
+
+axis(2,col="black",      at=c(0,10,20,30,40,50),labels=FALSE)
+mtext(side=2,col="black",at=c(0,10,20,30,40,50),c("0%","10%","20%","30%","40%", "50%"),line=axslinno,las=1,cex=axisnumscex)
+mtext("year CE", side = 1, col = "black", line = 2, las = 1, cex = axisnumscex)
+
+box(col = "black")
+
+#d) annual simulation and volcano
+
+hist_plot = hist_real$sim_o_volc_full/2.9
+hist_trans = hist_real$sim_o_volc_full/2.9
+
+hist_plot[hist_plot<hist_sig_95$sim_o_volc_full/2.9] = NA
+hist_trans[!hist_plot<hist_sig_95$sim_o_volc_full/2.9] = NA
+hist_plot[hist_plot == 0] = NA
+hist_trans[hist_trans == 0] = NA
+
+plot(0, ylim=ylimz, xlim = xlimz, 
+     main = "", xlab = "", ylab = "", axes = F)
+rect(1240, par('usr')[3], 1280, par('usr')[4], col = box_color, border = NA)
+rect(1430, par('usr')[3], 1470, par('usr')[4], col = box_color, border = NA)
+rect(1795, par('usr')[3], 1835, par('usr')[4], col = box_color, border = NA)
+grid (NULL,NULL, lty = 6, col = "grey50") 
+axis(1,      col="black",at=c(800,1000,1200,1400,1600,1800),labels=FALSE)
+mtext(side=1,col="black",at=c(800,1000,1200,1400,1600,1800),c(800,1000,1200,1400,1600,1800),line=1,las=1,cex=axisnumscex)
+lines(1950-(bin_borders[1:(length(bin_borders)-1)]-0.5), hist_plot, col = adjustcolor(cols[3], alpha.f = 0.9), type = "h", lw = lwidth)
+lines(1950-(bin_borders[1:(length(bin_borders)-1)]-0.5), hist_trans, col = adjustcolor(cols[3], alpha.f = 0.2), type = "h", lw = lwidth)
+
+mtext(expression(paste(plain("solar and sim-"),delta^{plain(18)}, plain("O (annual)"))), side = 3, line = -1.5, adj = 0.95, col = cols[3])
+mtext("   d)", side = 3, line = -1.5, adj = 0, col = "black")
+
+axis(2,col="black",      at=c(0,10,20,30,40,50),labels=FALSE)
+mtext(side=2,col="black",at=c(0,10,20,30,40,50),c("0%","10%","20%","30%","40%", "50%"),line=axslinno,las=1,cex=axisnumscex)
+mtext("year CE", side = 1, col = "black", line = 2, las = 1, cex = axisnumscex)
+
+box(col = "black")
+
+
+rm(axisnumscex, axslinno, cex_text, col_solar, col_volc, cols, hmax, namcex, namlin, nr_breaks, unitscex,unitslinno, xlimz, Timeseries, hist_plot, hist_trans)
+
+dev.off()
+
+```
