@@ -8,7 +8,6 @@ output: html_document
 ```{r setup, include=FALSE}
 library(plyr)
 library(dplyr)
-library(stacy.hadcm.tools)
 library(PaleoSpec)
 library(nest)
 library(tidyverse)
@@ -26,36 +25,8 @@ for(Model in c("HadCM3", "ECHAM5", "GISS", "CESM", "isoGSM")){
 }
 ```
 
-Mask_hadcm3 is introduced because some spectra calculation in hadcm3 must have gone wrong somehow. The reasons will be looked for soon. We excluded all entities where the spectra produced a 3 times higher variance than the variance calculation: 
-
-```{r}
-mask_hadcm3= c(T,T,T,T,T,F,F,F,F,F,F,F,F,T,T,T,F,F,F,F,T,F,F,F,F,F,F,F,T,T,T,T,T,F,F,T,F,F,F,F,F,F,F,F,F,F,T,F,F,F,F,F,T,F,F,F,F,T,F,F,F,T,F,F,F,T,F,T,F,F,F,F,F,T,F,F,F,T,F,F,F,F,F,T,T,F,T,F)
-mask_hadcm3 = rep(F,length(mask_hadcm3))
-#mask_hadcm3[53] = T #that's entity_id 348 which is weird...
-#mask_hadcm3 = c(F, T, F, F, F, F, F, F, T, T, F, F, T, F, F, F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, T, F, F, T, F, F, F, F, F, T, F, F, F, F, F, T, F, F, F, F, F, T, F, F)
-#mask_hadcm3 = c(F,F,F,F,
-                # T, F, F, F, F,F,
-                # F, F, F, T, T, F,F,F,
-                # F, F, T, F, F, F,
-                # F, F, F, F, F, T, T, T, T, F, F, F, F, F, F, F, F, F, F,F,F,F,
-                # T, F,
-                # F, F,F,F, 
-                # T,F,
-                # F, F, F, F,
-                # F, F,F,
-                # T, F, F,
-                # F, F,
-                # F, F,F,F,F,F,
-                # F, F,F,F,F,
-                # T, F, F, F, F, F, T, F,
-                # F, F,
-                # F)
-```
-
-
 Now calculate the spectra:
 ```{r warning=FALSE}
-
 source("Functions/event_synchronization.R")
 source("Functions/SubsampleTimeseriesBlock_highresNA.R")
 source('Functions/Filter/EASY_Sensor_WM4.R')
@@ -74,7 +45,7 @@ SPECTRA <- list(FULL = list(HadCM3 = list(), ECHAM5 = list(), GISS = list(), CES
                 RECD_D = list(d18O = list(), d13C = list()))
 for(Model in c("HadCM3", "ECHAM5", "GISS", "CESM", "isoGSM")){
   print(Model)
-  for(var in c("ISOT", "ITPC", "ITIF", "ITSL")){
+  for(var in c("ISOT", "ITIF")){
     SPECTRA$FULL[[Model]][[var]] <- list()
     SPECTRA$FULL_D[[Model]][[var]] <- list()
     SPECTRA$DOWN[[Model]][[var]] <- list()
@@ -86,9 +57,8 @@ for(Model in c("HadCM3", "ECHAM5", "GISS", "CESM", "isoGSM")){
       data_full = FULL[[Model]] %>% filter(entity_id == entity)
       if(sum(is.na(data_down$d13C_measurement))>length(data_down$d13C_measurement)/4*3){next}
       if(all(is.na(data_full[[var]]))){next}
-      if(Model == "HadCM3" & mask_hadcm3[ENTITY_INFO$entity_id == entity]){next}
-      if(Model %in% c("CESM", "isoGSM") & entity == 378 & var == "ITIF"){next}
-      if(Model %in% c("ECHAM5") & entity %in% c(672, 598) & var == "ITIF"){next}
+      if(Model %in% c("CESM", "isoGSM") & entity == 378){next}
+      if(Model %in% c("ECHAM5") & entity %in% c(672, 598)){next}
       
       data_down[[paste0(var,"_d")]]  = irr_detrend(TS = list(time = data_down$year_BP, value = data_down[[var]]))$value
       data_full[[paste0(var,"_d")]]  = irr_detrend(TS = list(time = data_full$year_BP, value = data_full[[var]]))$value
@@ -99,10 +69,7 @@ for(Model in c("HadCM3", "ECHAM5", "GISS", "CESM", "isoGSM")){
       SPECTRA$FULL_D[[Model]][[var]][[name]] = SpecMTM(ts(data = na.omit(rev(data_full[[paste0(var,"_d")]])), start = LastElement(data_full$year_BP), end = FirstElement(data_full$year_BP), deltat = 1), plot = F)
       
       #Down spectra
-      if(sum(is.na(data_down[[var]]))>length(data_down[[var]])/4*3){
-        #print(entity)
-        next
-        }
+      if(sum(is.na(data_down[[var]]))>length(data_down[[var]])/4*3){next}
       start_ts = FirstElement(data_down$year_BP)
       length = length(data_down$year_BP)
       stop_ts = LastElement(data_down$year_BP)
@@ -145,10 +112,6 @@ for(Model in c("HadCM3", "ECHAM5", "GISS", "CESM", "isoGSM")){
       
       #4) spectrum
       if(length(na.omit(data_ds_eq))>8){SPECTRA$DOWN_FILTER[[Model]][[var]][[name]] = SpecMTM(na.omit(data_ds_eq), plot = F)}
-      
-      
-      
-      
       
     }
     if(Model == "GISS"){
@@ -250,24 +213,18 @@ VARIANCE$entity_id = as.numeric(VARIANCE$entity_id)
 Now comes the plotting. Let's see what we are left with...
 
 ```{r}
+library(latex2exp)
 cex_text = 1.2
 cex_text_legend = 1.9
 cex_axis = 1
 cex_axis_text = 1
 lw_smooth =3
 
-cairo_pdf(file = paste0("Plots/Manuscript_7_Spectra.pdf"), width = 10/2*3, height = 6)
-#svg(file = paste0("Plots/Manuscript_7_Spectra.svg"), width = 10/2*3, height = 6)
+cairo_pdf(file = paste0("Plots/Fig_9_Spectra.pdf"), width = 10/2*3, height = 6)
 
-
-#COLZ <- c("#1A2254", "#0A4296", "#278BCE","#91002B", "#D6604D", "black")
-#IPCC
-#COLZ = c("red", rgb(0,0,0), rgb(112,160,205,max = 255), rgb(196,121,0,max = 255), rgb(178,178,178,max = 255), rgb(0,52,102,max = 255))
-COLZ = c("red", rev(RColorBrewer::brewer.pal(6, "YlGnBu")[2:6]))
-#COLZ = c(rgb(112,160,205, max = 255), rgb(196,121,0, max = 255),rgb(178,178,178, max = 255),rgb(0,52,102, max = 255),rgb(0,121,0, max = 255))
 COLZ = c(rgb(112,160,205, max = 255), rgb(0,52,102, max = 255), rgb(178,178,178, max = 255),rgb(0,121,0, max = 255), rgb(196,121,0, max = 255))
 
-COLZ_carbon = "black"#rgb(33, 102, 172, max = 255)
+COLZ_carbon = "black"
 COLZ_grid = adjustcolor("grey", alpha.f = 0.5)
 
 #########################################################################################################
@@ -299,10 +256,9 @@ mtext(side=2,at=c(1e-3, 1e-1, 1e1, 1e3),line = 1, c(1e-3, 0.1, 10, 1000),las=1,c
 LLines(spec_ratio, col = adjustcolor("black", alpha.f = 0.3), lty = 1, lw = 2)
 LLines(LogSmooth(spec_ratio), col = "black", lw = lw_smooth)
 
-mtext("a) speleo-d18O/d13C", side = 3, line = -2, adj = 0.05, cex = cex_text)
+mtext(TeX("a) $\\delta^{18}$O$_{speleo}$/$\\delta^{13}$C$_{speleo}"), side = 3, line = -3, adj = 0.05, cex = cex_text)
 
-
-#b) second plot is spec ratio between speleo-d18O and downsampled d18O
+#b) second plot is spec ratio between speleo-d18O and annual d18O
 LPlot(spec_ratio, col = adjustcolor("white", alpha = 0),
       ylim = c(0.0002,100), xlim = c(1/300, 0.5),
       ylab = "",
@@ -313,45 +269,31 @@ abline(h=c(1e-3, 1e-2, 1e-1, 1e1, 1e2, 1e3), v=c(0.005, 0.01, 0.02, 0.05,0.1, 0.
 abline(h=1)
 
 mtext("Period (y)", side = 1, line= 2, cex = cex_axis_text)
-#mtext(expression("PSD [‰"^"2"*"year]"), side = 4, line= 2.5, at = 1, las = 0, cex = cex_axis_text)
-
 axis(side = 1, at = c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5), labels = FALSE)
 mtext(side=1,at=c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5),line = 1,
       c(1/0.005, 1/0.01, 1/0.02, 1/0.05,1/0.1, 1/0.2, 1/0.5),las=1,col="black", cex = cex_axis)
-# axis(side = 4, at = c(1e-3,1e-2, 1e-1,1, 1e1, 1e2), labels = FALSE)
-# mtext(side=4,at=c(1e-3,1e-2, 1e-1,1, 1e1, 1e2),line = 1, c(1e-3,1e-2, 0.1,1, 10, 100),las=1,col="black", cex = cex_axis)
 
 models = c("ECHAM5","GISS", "CESM","HadCM3", "isoGSM")
 for(ii in 1:5){
-  if(ii %in% c(2,3)){variable = "ITPC"}
-  else{variable = "ITIF"}
-  #variable = "ISOT"
+  variable = "ITIF"
   spec_ratio <- SPECTRA$RECD$d18O$Mean$spec
-  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$spec
-  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$lim.2
-  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$lim.1
+  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$spec
+  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.2
+  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.1
   LLines(spec_ratio, col = adjustcolor(COLZ[ii], alpha.f = 0.2), lty = 1, lw = 2)
 }
 for(ii in 1:5){
-  if(ii %in% c(2,3)){variable = "ITPC"}
-  else{variable = "ITIF"}
-  #variable = "ISOT"
+  variable = "ITIF"
   spec_ratio <- SPECTRA$RECD$d18O$Mean$spec
-  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$spec
-  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$lim.2
-  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$lim.1
+  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$spec
+  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.2
+  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.1
   LLines(LogSmooth(spec_ratio), col = COLZ[ii], lty = 1, lw = lw_smooth)
 }
 
-legend("bottomleft", legend = c("ECHAM5-wiso","GISS", "iCESM","iHadCM3", "isoGSM"),
-       text.col = COLZ, 
-       #lwd = rep(lw_smooth,5), lty = rep(1,5), 
-       bty = "n", cex = cex_text_legend)
+mtext(TeX("b) $\\delta^{18}$O$_{speleo}$/$\\delta^{18}$O$_{sim}$ (annual resolution)"), side = 3, line = -3, adj = 0.05, cex = cex_text)
 
-mtext(" b) speleo-d18O / modeled d18O (record res.)", side = 3, line = -2, adj = 0.05, cex = cex_text)
-
-
-#c) second plot is spec ratio between speleo-d18O and annual d18O
+#c) second plot is spec ratio between speleo-d18O and downsampled d18O
 LPlot(spec_ratio, col = adjustcolor("white", alpha = 0),
       ylim = c(0.0002,100), xlim = c(1/300, 0.5),
       ylab = "",
@@ -361,9 +303,8 @@ LPlot(spec_ratio, col = adjustcolor("white", alpha = 0),
 abline(h=c(1e-3, 1e-2, 1e-1, 1e1, 1e2, 1e3), v=c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5), col=COLZ_grid, lty=3)
 abline(h=1)
 
-mtext("Period (y)", side = 1, line= 2, cex = cex_axis_text)
 mtext(expression("PSD ratio"), side = 4, line= 2.5, at = 1, las = 0, cex = cex_axis_text)
-
+mtext("Period (y)", side = 1, line= 2, cex = cex_axis_text)
 axis(side = 1, at = c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5), labels = FALSE)
 mtext(side=1,at=c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5),line = 1,
       c(1/0.005, 1/0.01, 1/0.02, 1/0.05,1/0.1, 1/0.2, 1/0.5),las=1,col="black", cex = cex_axis)
@@ -372,32 +313,28 @@ mtext(side=4,at=c(1e-3,1e-2, 1e-1,1, 1e1, 1e2),line = 1, c(1e-3,1e-2, 0.1,1, 10,
 
 models = c("ECHAM5","GISS", "CESM","HadCM3", "isoGSM")
 for(ii in 1:5){
-  if(ii %in% c(2,3)){variable = "ITPC"}
-  else{variable = "ITIF"}
-  #variable = "ISOT"
+  variable = "ITIF"
   spec_ratio <- SPECTRA$RECD$d18O$Mean$spec
-  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$spec
-  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.2
-  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.1
+  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$spec
+  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$lim.2
+  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$lim.1
   LLines(spec_ratio, col = adjustcolor(COLZ[ii], alpha.f = 0.2), lty = 1, lw = 2)
 }
 for(ii in 1:5){
-  if(ii %in% c(2,3)){variable = "ITPC"}
-  else{variable = "ITIF"}
-  #variable = "ISOT"
+  variable = "ITIF"
   spec_ratio <- SPECTRA$RECD$d18O$Mean$spec
-  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$spec
-  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.2
-  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.1
+  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$spec
+  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$lim.2
+  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$lim.1
   LLines(LogSmooth(spec_ratio), col = COLZ[ii], lty = 1, lw = lw_smooth)
 }
 
-# legend("bottomleft", legend = c("HadCM3", "ECHAM5", "GISS", "CESM", "isoGSM"),
-#        text.col = COLZ, 
-#        #lwd = rep(lw_smooth,5), lty = rep(1,5), 
-#        bty = "n", cex = cex_text_legend)
+legend("bottomleft", legend = c("ECHAM5-wiso","GISS-E2-R", "iCESM","iHadCM3", "isoGSM"),
+       text.col = COLZ, 
+       bty = "n", cex = cex_text_legend)
 
-mtext(" c) speleo-d18O / modeled d18O (annual res.)", side = 3, line = -2, adj = 0.05, cex = cex_text)
+mtext(TeX("c) $\\delta^{18}$O$_{speleo}$/$\\delta^{18}$O$_{sim}$ (record resolution)"), side = 3, line = -3, adj = 0.05, cex = cex_text)
+
 
 #d) inset in first plot:
 par(fig = c(0.1,0.32, 0.1, 0.5), new = T)  
@@ -422,17 +359,12 @@ lines(c(median(log10(VARIANCE$d13C), na.rm = T),median(log10(VARIANCE$d13C), na.
 lines(density(log10(VARIANCE$d13C),na.rm = T),
       lwd = 2, col = COLZ_carbon)
 abline(v=c(log10(0.01), log10(0.1), 0, log10(10)), col=COLZ_grid, lty=2)
-#abline(v=0, col = "grey60", lty = 3)
-#mtext(text = TeX("$$Var_{Rec}/Var_{Sim}$$"),side = 1,line = 2.5, cex = 1.5)
 mtext(text = "density",side = 2,line = 2.5, cex = cex_text)
 mtext(text = expression(paste(delta^{plain(18)}, plain(O))), side = 3, line = -4, adj = 1,col = "#B2182B", cex = cex_text, at = log10(5))
 mtext(text = expression(paste(delta^{plain(13)}, plain(C))), side = 3, line = -6.5, adj = 1,col = COLZ_carbon, cex = cex_text, at = log10(5))
 box(col = "black")
 
 dev.off()
-
-
-
 ```
 
 ```{r}
@@ -457,11 +389,7 @@ print(paste0("Median d18O : ", round(median(as.numeric(VARIANCE$d18O), na.rm = T
 
 ```
 
-
-
 For GISS: Spectra 33 and 278 behave strangely... (that's why we remove them from the mean.)
-
-Calculating slopes for the spectra and comparing them to specific climate variables did not bring further insight. We saw no relationship whatsoever between all the tested simulated variables (temperature, precipitation, evaporation), also not when separated into specific climatic regimes. More details in 4_Spectra.Rmd
 
 
 Some numbers:
@@ -499,35 +427,48 @@ print(paste("Absolute change for 1000y: +-",round(mean(abs(trend_d13C$trend)[(tr
 
 ```
 
-Let's try histograms of the variance. This is also variability but on the complete timescale. 
-
-isoGSM: the variance is much higher than the varfromspec variance --> so sth in the spectrum calculation goes wrong
-        This is for both downsampled and full
-same for ECHAM5, GISS, CESM
-HadCM3: here we have alterations into both directions. So both higher and lower
-
-The change to calculating 300y variances instead of 1000y variances doesn't make a huge difference...
-
-
 ```{r}
 rm(var)
+
+#VARIANCE <- list()
+for(Model in c("HadCM3", "ECHAM5", "GISS", "CESM", "isoGSM")){
+  #fields::image.plot(VAR_FIELDS[[Model]], zlim = c(0,100))
+  VARIANCE[[Model]] <- list(FULL = list(), FULL_300 = list(), FULL_SPEC = list(), DOWN = list(), DOWN_SPEC = list(), REC = list(), REC_SPEC = list())
+  for(entity in ENTITY_INFO$entity_id){
+    if(entity %in% c(278,598,672,378)){next}
+    if(entity == 33 & Model == "GISS"){next}
+    data_full = FULL[[Model]] %>% filter(entity_id == entity)
+    data_rec = DOWN[[Model]] %>% filter(entity_id == entity)
+    if(all(is.na(data_rec$d13C_measurement))){next}
+    
+    VARIANCE[[Model]]$FULL = c(VARIANCE[[Model]]$FULL, var(data_full$ITIF, na.rm = T))
+    VARIANCE[[Model]]$DOWN = c(VARIANCE[[Model]]$DOWN, var(data_rec$ITIF, na.rm = T))
+    VARIANCE[[Model]]$REC = c(VARIANCE[[Model]]$REC, var(data_rec$d18O_measurement, na.rm = T))
+    
+    VARIANCE[[Model]]$entity_id = c(VARIANCE[[Model]]$entity_id, entity)
+    
+  }
+  VARIANCE[[Model]]$FULL = as.numeric(VARIANCE[[Model]]$FULL)
+  VARIANCE[[Model]]$DOWN = as.numeric(VARIANCE[[Model]]$DOWN)
+  VARIANCE[[Model]]$REC = as.numeric(VARIANCE[[Model]]$REC)
+  VARIANCE[[Model]]$entity_id = as.numeric(VARIANCE[[Model]]$entity_id)
+}
+
+
+```
+```{r}
 source("Functions/aw_mean.R")
 VAR_FIELDS<-list()
-load("Data/Annual_VarFields/Annual_HadCM3_ISOT.RData")
-VAR_FIELDS$HadCM3 <- apply(ANNUAL[,,], c(1,2), var, na.rm = T)
-VAR_FIELDS$HadCM3_300 <- apply(ANNUAL[,,200:500], c(1,2), var, na.rm = T)
-load("Data/Annual_VarFields/Annual_ECHAM5_ISOT.RData")
-VAR_FIELDS$ECHAM5 <- apply(ANNUAL[,,], c(1,2), var, na.rm = T)
-VAR_FIELDS$ECHAM5_300 <- apply(ANNUAL[,,200:500], c(1,2), var, na.rm = T)
-load("Data/Annual_VarFields/Annual_GISS_ISOT.RData")
-VAR_FIELDS$GISS <- apply(ANNUAL[,,], c(1,2), var, na.rm = T)
-VAR_FIELDS$GISS_300 <- apply(ANNUAL[,,200:500], c(1,2), var, na.rm = T)
-load("Data/Annual_VarFields/Annual_CESM_ISOT.RData")
-VAR_FIELDS$CESM <- apply(ANNUAL[,,], c(1,2), var, na.rm = T)
-VAR_FIELDS$CESM_300 <- apply(ANNUAL[,,200:500], c(1,2), var, na.rm = T)
-load("Data/Annual_VarFields/Annual_isoGSM_ISOT.RData")
-VAR_FIELDS$isoGSM <- apply(ANNUAL[,,], c(1,2), var, na.rm = T)
-VAR_FIELDS$isoGSM_300 <- apply(ANNUAL[,,200:500], c(1,2), var, na.rm = T)
+load("Data/SISAL1k_VarField_HadCM3.RData")
+VAR_FIELDS$HadCM3 <- MEAN_FIELD$ITIF
+load("Data/SISAL1k_VarField_ECHAM5.RData")
+VAR_FIELDS$ECHAM5 <- MEAN_FIELD$ITIF
+load("Data/SISAL1k_VarField_GISS.RData")
+VAR_FIELDS$GISS <- MEAN_FIELD$ITIF
+load("Data/SISAL1k_VarField_CESM.RData")
+VAR_FIELDS$CESM <- MEAN_FIELD$ITIF
+load("Data/SISAL1k_VarField_isoGSM.RData")
+VAR_FIELDS$isoGSM <- MEAN_FIELD$ITIF
 
 VAR_FIELDS$HadCM3[VAR_FIELDS$HadCM3>50] = NA
 VAR_FIELDS$ECHAM5[VAR_FIELDS$ECHAM5>50] = NA
@@ -535,72 +476,8 @@ VAR_FIELDS$GISS[VAR_FIELDS$GISS>50] = NA
 VAR_FIELDS$CESM[VAR_FIELDS$CESM>50] = NA
 VAR_FIELDS$isoGSM[VAR_FIELDS$isoGSM>50] = NA
 
-#VARIANCE <- list()
-for(Model in c("HadCM3", "ECHAM5", "GISS", "CESM", "isoGSM")){
-  #fields::image.plot(VAR_FIELDS[[Model]], zlim = c(0,100))
-  VARIANCE[[Model]] <- list(FULL = list(), FULL_300 = list(), FULL_SPEC = list(), DOWN = list(), DOWN_SPEC = list(), REC = list(), REC_SPEC = list())
-  for(entity in ENTITY_INFO$entity_id){
-    if(entity == 278){next}
-    if(entity == 598){next}
-    if(entity == 672){next}
-    if(entity == 378){next}
-    if(entity == 33 & Model == "GISS"){next}
-    if(Model == "HadCM3" & mask_hadcm3[ENTITY_INFO$entity_id == entity]){next}
-    data_full = FULL[[Model]] %>% filter(entity_id == entity)
-    data_rec = DOWN[[Model]] %>% filter(entity_id == entity)
-    if(all(is.na(data_rec$d13C_measurement))){next}
-    
-    if(Model %in% c("GISS", "CESM")){variable = "ITPC"}
-    else{variable = "ITIF"}
-    
-    f_start = FirstElement(SPECTRA$FULL_D[[Model]][[variable]][[paste0("ENTITY", entity)]]$freq)
-    f_end = LastElement(SPECTRA$FULL_D[[Model]][[variable]][[paste0("ENTITY", entity)]]$freq)
-    if(f_start<1/300){f_start = 1/300}
-    if(f_start>0.5){f_end = 0.5}
-    
-    VARIANCE[[Model]]$FULL = c(VARIANCE[[Model]]$FULL, var(data_full[[variable]], na.rm = T))
-    VARIANCE[[Model]]$FULL_300 = c(VARIANCE[[Model]]$FULL_300, var(data_full[[variable]][200:500], na.rm = T))
-    VARIANCE[[Model]]$DOWN = c(VARIANCE[[Model]]$DOWN, var(data_rec[[variable]], na.rm = T))
-    VARIANCE[[Model]]$REC = c(VARIANCE[[Model]]$REC, var(data_rec$d18O_measurement, na.rm = T))
-    
-    VARIANCE[[Model]]$FULL_SPEC = c(VARIANCE[[Model]]$FULL_SPEC, 
-                                    PaleoSpec::GetVarFromSpectra(SPECTRA$FULL_D[[Model]][[variable]][[paste0("ENTITY", entity)]], f = c(f_start, f_end))$var)
-    
-    if(!is.null(SPECTRA$DOWN_D[[Model]][[variable]][[paste0("ENTITY", entity)]])){
-      f_start = FirstElement(SPECTRA$DOWN_D[[Model]][[variable]][[paste0("ENTITY", entity)]]$freq)
-      f_end = LastElement(SPECTRA$DOWN_D[[Model]][[variable]][[paste0("ENTITY", entity)]]$freq)
-      if(f_start<1/300){f_start = 1/300}
-      if(f_start>0.5){f_end = 0.5}
-      VARIANCE[[Model]]$DOWN_SPEC = c(VARIANCE[[Model]]$DOWN_SPEC, 
-                                    PaleoSpec::GetVarFromSpectra(SPECTRA$DOWN_D[[Model]][[variable]][[paste0("ENTITY", entity)]], f = c(f_start, f_end))$var)
-      VARIANCE[[Model]]$REC_SPEC = c(VARIANCE[[Model]]$REC_SPEC, 
-                                   PaleoSpec::GetVarFromSpectra(SPECTRA$RECD_D$d18O[[paste0("ENTITY", entity)]], f = c(f_start, f_end))$var)
-    }else{
-      VARIANCE[[Model]]$DOWN_SPEC = c(VARIANCE[[Model]]$DOWN_SPEC,NA)
-      VARIANCE[[Model]]$REC_SPEC = c(VARIANCE[[Model]]$REC_SPEC, NA)
-    }
-    
-    VARIANCE[[Model]]$entity_id = c(VARIANCE[[Model]]$entity_id, entity)
-    
-  }
-  VARIANCE[[Model]]$FULL = as.numeric(VARIANCE[[Model]]$FULL)
-  VARIANCE[[Model]]$FULL_300 = as.numeric(VARIANCE[[Model]]$FULL_300)
-  VARIANCE[[Model]]$FULL_SPEC = as.numeric(VARIANCE[[Model]]$FULL_SPEC)
-  VARIANCE[[Model]]$DOWN = as.numeric(VARIANCE[[Model]]$DOWN)
-  VARIANCE[[Model]]$DOWN_SPEC = as.numeric(VARIANCE[[Model]]$DOWN_SPEC)
-  VARIANCE[[Model]]$REC = as.numeric(VARIANCE[[Model]]$REC)
-  VARIANCE[[Model]]$REC_SPEC = as.numeric(VARIANCE[[Model]]$REC_SPEC)
-  VARIANCE[[Model]]$entity_id = as.numeric(VARIANCE[[Model]]$entity_id)
-  
-  # VARIANCE[[Model]]$FULL[VARIANCE[[Model]]$FULL>3] = NA
-  # VARIANCE[[Model]]$FULL_300[VARIANCE[[Model]]$FULL_300>3] = NA
-  # VARIANCE[[Model]]$DOWN[VARIANCE[[Model]]$DOWN>3] = NA
-  # VARIANCE[[Model]]$REC[VARIANCE[[Model]]$REC>3] = NA
-}
 
 
-```
-```{r}
 No.digits = 2
 
 exp_var_global = c("$var_{\text{global}}$")
@@ -611,37 +488,25 @@ for(Model in c("ECHAM5", "GISS", "CESM", "HadCM3", "isoGSM")){
   print(paste(Model,":", round(simpleawmean(VAR_FIELDS[[Model]], lats = seq(-90,90,length.out = dim(VAR_FIELDS[[Model]])[2])), digits = No.digits),
               "90% CI: (",round(quantile(as.numeric(VAR_FIELDS[[Model]]), probs = 0.05, na.rm = T),digits = No.digits),",",
               round(quantile(as.numeric(VAR_FIELDS[[Model]]), probs = 0.95, na.rm = T),digits = No.digits),")"))
-  print(paste(Model," 300y :", round(simpleawmean(VAR_FIELDS[[paste0(Model,"_300")]], 
-                                            lats = seq(-90,90,length.out = dim(VAR_FIELDS[[paste0(Model,"_300")]])[2])), digits = No.digits),
-              "90% CI: (",round(quantile(as.numeric(VAR_FIELDS[[paste0(Model,"_300")]]), probs = 0.05, na.rm = T),digits = No.digits),",",
-              round(quantile(as.numeric(VAR_FIELDS[[paste0(Model,"_300")]]), probs = 0.95, na.rm = T),digits = No.digits),")"))
-  exp_var_global = c(exp_var_global, paste0("& ",round(simpleawmean(VAR_FIELDS[[paste0(Model,"_300")]], 
-                                                                    lats = seq(-90,90,length.out = dim(VAR_FIELDS[[paste0(Model,"_300")]])[2])), 
+  
+  exp_var_global = c(exp_var_global, paste0("& ",round(simpleawmean(VAR_FIELDS[[Model]], 
+                                                                    lats = seq(-90,90,length.out = dim(VAR_FIELDS[[Model]])[2])), 
                                                        digits = No.digits)," (",
-                                            round(quantile(as.numeric(VAR_FIELDS[[paste0(Model,"_300")]]), probs = 0.05, na.rm = T),digits = No.digits), ", ",
-                                            round(quantile(as.numeric(VAR_FIELDS[[paste0(Model,"_300")]]), probs = 0.95, na.rm = T),digits = No.digits),")"))
+                                            round(quantile(as.numeric(VAR_FIELDS[[Model]]), probs = 0.05, na.rm = T),digits = No.digits), ", ",
+                                            round(quantile(as.numeric(VAR_FIELDS[[Model]]), probs = 0.95, na.rm = T),digits = No.digits),")"))
   
   print(paste("Annual resolution at speleo location",Model,":", round(median(as.numeric(VARIANCE[[Model]]$FULL), na.rm = T), digits = No.digits),
             "90% CI: (",round(quantile(as.numeric(VARIANCE[[Model]]$FULL), probs = 0.05, na.rm = T), digits = No.digits),
             ",",round(quantile(as.numeric(VARIANCE[[Model]]$FULL), probs = 0.95, na.rm = T), digits = No.digits),")"))
-  print(paste("Annual resolution at speleo location 300y",Model,":", round(median(as.numeric(VARIANCE[[Model]]$FULL_300), na.rm = T), digits = No.digits),
-            "90% CI: (",round(quantile(as.numeric(VARIANCE[[Model]]$FULL_300), probs = 0.05, na.rm = T), digits = No.digits),
-            ",",round(quantile(as.numeric(VARIANCE[[Model]]$FULL_300), probs = 0.95, na.rm = T), digits = No.digits),")"))
-  print(paste("Annual resolution at speleo location SPEC",Model,":", round(median(as.numeric(VARIANCE[[Model]]$FULL_SPEC), na.rm = T), digits = No.digits),
-            "90% CI: (",round(quantile(as.numeric(VARIANCE[[Model]]$FULL_SPEC), probs = 0.05, na.rm = T), digits = No.digits),
-            ",",round(quantile(as.numeric(VARIANCE[[Model]]$FULL_SPEC), probs = 0.95, na.rm = T), digits = No.digits),")"))
   
-  exp_var_speleo_full = c(exp_var_speleo_full, paste0("& ", round(median(as.numeric(VARIANCE[[Model]]$FULL_300), na.rm = T), digits = No.digits), " (",
-                                                      round(quantile(as.numeric(VARIANCE[[Model]]$FULL_300), probs = 0.05, na.rm = T), digits = No.digits),", ",
-                                                      round(quantile(as.numeric(VARIANCE[[Model]]$FULL_300), probs = 0.95, na.rm = T), digits = No.digits),")"))
+  exp_var_speleo_full = c(exp_var_speleo_full, paste0("& ", round(median(as.numeric(VARIANCE[[Model]]$FULL), na.rm = T), digits = No.digits), " (",
+                                                      round(quantile(as.numeric(VARIANCE[[Model]]$FULL), probs = 0.05, na.rm = T), digits = No.digits),", ",
+                                                      round(quantile(as.numeric(VARIANCE[[Model]]$FULL), probs = 0.95, na.rm = T), digits = No.digits),")"))
   
   print(paste("Record resolution at speleo location",Model,":", round(median(as.numeric(VARIANCE[[Model]]$DOWN), na.rm = T), digits = No.digits),
             "90% CI: (",round(quantile(as.numeric(VARIANCE[[Model]]$DOWN), probs = 0.05, na.rm = T), digits = No.digits),
             ",",round(quantile(as.numeric(VARIANCE[[Model]]$DOWN), probs = 0.95, na.rm = T), digits = No.digits),")"))
-  print(paste("Record resolution at speleo location SPEC",Model,":", round(median(as.numeric(VARIANCE[[Model]]$DOWN_SPEC), na.rm = T), digits = No.digits),
-            "90% CI: (",round(quantile(as.numeric(VARIANCE[[Model]]$DOWN_SPEC), probs = 0.05, na.rm = T), digits = No.digits),
-            ",",round(quantile(as.numeric(VARIANCE[[Model]]$DOWN_SPEC), probs = 0.95, na.rm = T), digits = No.digits),")"))
-    
+  
   exp_var_speleo_ds = c(exp_var_speleo_ds, paste0("& ", round(median(as.numeric(VARIANCE[[Model]]$DOWN), na.rm = T), digits = No.digits), " (",
                                                   round(quantile(as.numeric(VARIANCE[[Model]]$DOWN), probs = 0.05, na.rm = T), digits = No.digits),", ",
                                                   round(quantile(as.numeric(VARIANCE[[Model]]$DOWN), probs = 0.95, na.rm = T), digits = No.digits),")"))
@@ -658,14 +523,7 @@ for(Model in c("ECHAM5", "GISS", "CESM", "HadCM3", "isoGSM")){
 ```{r}
 hist(VAR_FIELDS$HadCM3, breaks = 9, border = "white", prob = TRUE, 
      ylim = c(0,3), xlim = c(0,10), xlab = "", ylab = "", main = "", cex.main = cex_text, cex.axis = cex_text)
-#axis(side = 1, at = c(log10(0.01), log10(0.1), 0, log10(10), log10(100)),
-#     labels = c(0.01, 0.1, 1, 10, 100), cex.axis = cex_text)
-#HadCM3
-#lines(density(VAR_FIELDS$HadCM3, na.rm = T), lwd = 2, col = RColorBrewer::brewer.pal(6, "YlGnBu")[6])
-#lines(density(VAR_FIELDS$ECHAM5, na.rm = T), lwd = 2, col = RColorBrewer::brewer.pal(6, "YlGnBu")[5])
-#lines(density(VAR_FIELDS$GISS, na.rm = T), lwd = 2, col = RColorBrewer::brewer.pal(6, "YlGnBu")[4])
-#lines(density(VAR_FIELDS$CESM, na.rm = T), lwd = 2, col = RColorBrewer::brewer.pal(6, "YlGnBu")[3])
-#lines(density(VAR_FIELDS$isoGSM, na.rm = T), lwd = 2, col = RColorBrewer::brewer.pal(6, "YlGnBu")[2])
+
 
 lines(density(as.numeric(VARIANCE$HadCM3$FULL), na.rm = T), lwd = 2, col = RColorBrewer::brewer.pal(6,"Reds")[6])
 lines(density(as.numeric(VARIANCE$ECHAM5$FULL), na.rm = T), lwd = 2, col = RColorBrewer::brewer.pal(6,"Reds")[5])
@@ -677,185 +535,6 @@ lines(density(as.numeric(VARIANCE$isoGSM$FULL), na.rm = T), lwd = 2, col = RColo
 
 Now comes the plotting. Let's see what we are left with...
 
-```{r}
-cex_text = 1.2
-cex_text_legend = 1.9
-cex_axis = 1
-cex_axis_text = 1
-lw_smooth =3
-
-cairo_pdf(file = paste0("Plots/Manuscript_7_Spectra_noratio.pdf"), width = 10/2*3, height = 6)
-
-
-#COLZ <- c("#1A2254", "#0A4296", "#278BCE","#91002B", "#D6604D", "black")
-#IPCC
-#COLZ = c("red", rgb(0,0,0), rgb(112,160,205,max = 255), rgb(196,121,0,max = 255), rgb(178,178,178,max = 255), rgb(0,52,102,max = 255))
-COLZ = c("red", rev(RColorBrewer::brewer.pal(6, "YlGnBu")[2:6]))
-#COLZ = c(rgb(112,160,205, max = 255), rgb(196,121,0, max = 255),rgb(178,178,178, max = 255),rgb(0,52,102, max = 255),rgb(0,121,0, max = 255))
-COLZ = c(rgb(112,160,205, max = 255), rgb(0,52,102, max = 255), rgb(178,178,178, max = 255),rgb(0,121,0, max = 255), rgb(196,121,0, max = 255))
-
-COLZ_carbon = "black"#rgb(33, 102, 172, max = 255)
-COLZ_grid = adjustcolor("grey", alpha.f = 0.5)
-
-#########################################################################################################
-par(mar=c(1,2,0,1),oma=c(3,3,3,3),xaxs="i",yaxs="i",cex=1,lwd=2, mfrow = c(1,3))
-
-# a) first plot is spec ratio btw d18O and d13C speleo
-spec_ratio <- SPECTRA$RECD$d18O$Mean$spec
-LPlot(spec_ratio, col = "white",
-        ylim = c(0.0002,100), xlim = c(1/300, 0.5),
-        ylab = "",
-        xaxt = 'n',
-        yaxt = "n",
-        xlab = "", lwd = 2)
-abline(h=c(1e-3, 1e-2, 1e-1, 1e1, 1e2, 1e3), v=c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5), col=COLZ_grid, lty=3)
-abline(h=1)
-
-mtext("Period (y)", side = 1, line= 2, cex = cex_axis_text)
-mtext(expression("PSD ratio"), side = 2, line= 2, at = 1, las = 0, cex = cex_axis_text)
-
-axis(side = 1, at = c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5), labels = FALSE)
-mtext(side=1,at=c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5),line = 1,
-      c(1/0.005, 1/0.01, 1/0.02, 1/0.05,1/0.1, 1/0.2, 1/0.5),las=1,col="black", cex = cex_axis)
-axis(side=2, at = c(1e-3, 1e-1, 1e1, 1e3), labels = FALSE)
-mtext(side=2,at=c(1e-3, 1e-1, 1e1, 1e3),line = 1, c(1e-3, 0.1, 10, 1000),las=1,col="black", cex = cex_axis)
-
-LLines(spec_ratio, col = adjustcolor("black", alpha.f = 0.3), lty = 1, lw = 2)
-LLines(LogSmooth(spec_ratio), col = "black", lw = lw_smooth)
-LLines(SPECTRA$RECD$d13C$Mean$spec, col = adjustcolor("red", alpha.f = 0.3))
-LLines(LogSmooth(SPECTRA$RECD$d13C$Mean$spec), col = "red", lw = lw_smooth)
-
-mtext("a) speleo-d18O/d13C", side = 3, line = -2, adj = 0.05, cex = cex_text)
-
-
-#b) second plot is spec ratio between speleo-d18O and downsampled d18O
-LPlot(spec_ratio, col = adjustcolor("white", alpha = 0),
-      ylim = c(0.0002,100), xlim = c(1/300, 0.5),
-      ylab = "",
-      xaxt = 'n',
-      yaxt = "n",
-      xlab = "", lwd = 2)
-abline(h=c(1e-3, 1e-2, 1e-1, 1e1, 1e2, 1e3), v=c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5), col=COLZ_grid, lty=3)
-abline(h=1)
-
-mtext("Period (y)", side = 1, line= 2, cex = cex_axis_text)
-#mtext(expression("PSD [‰"^"2"*"year]"), side = 4, line= 2.5, at = 1, las = 0, cex = cex_axis_text)
-
-axis(side = 1, at = c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5), labels = FALSE)
-mtext(side=1,at=c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5),line = 1,
-      c(1/0.005, 1/0.01, 1/0.02, 1/0.05,1/0.1, 1/0.2, 1/0.5),las=1,col="black", cex = cex_axis)
-# axis(side = 4, at = c(1e-3,1e-2, 1e-1,1, 1e1, 1e2), labels = FALSE)
-# mtext(side=4,at=c(1e-3,1e-2, 1e-1,1, 1e1, 1e2),line = 1, c(1e-3,1e-2, 0.1,1, 10, 100),las=1,col="black", cex = cex_axis)
-
-models = c("ECHAM5","GISS", "CESM","HadCM3", "isoGSM")
-for(ii in 1:5){
-  if(ii %in% c(2,3)){variable = "ITPC"}
-  else{variable = "ITIF"}
-  spec_ratio <- SPECTRA$RECD$d18O$Mean$spec
-  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$spec
-  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$lim.1
-  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$lim.2
-  LLines(SPECTRA$DOWN[[models[ii]]]$ISOT$Mean$spec, col = adjustcolor(COLZ[ii], alpha.f = 0.2), lty = 1, lw = 2)
-}
-for(ii in 1:5){
-  if(ii %in% c(2,3)){variable = "ITPC"}
-  else{variable = "ITIF"}
-  spec_ratio <- SPECTRA$RECD$d18O$Mean$spec
-  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$spec
-  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$lim.1
-  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$DOWN[[models[ii]]][[variable]]$Mean$spec$lim.2
-  LLines(LogSmooth(SPECTRA$DOWN[[models[ii]]]$ISOT$Mean$spec), col = COLZ[ii], lty = 1, lw = lw_smooth)
-}
-
-legend("bottomleft", legend = c("ECHAM5-wiso","GISS", "iCESM","iHadCM3", "isoGSM"),
-       text.col = COLZ, 
-       #lwd = rep(lw_smooth,5), lty = rep(1,5), 
-       bty = "n", cex = cex_text_legend)
-
-mtext(" b) speleo-d18O / modeled d18O (record res.)", side = 3, line = -2, adj = 0.05, cex = cex_text)
-
-
-#c) second plot is spec ratio between speleo-d18O and annual d18O
-LPlot(spec_ratio, col = adjustcolor("white", alpha = 0),
-      ylim = c(0.0002,100), xlim = c(1/300, 0.5),
-      ylab = "",
-      xaxt = 'n',
-      yaxt = "n",
-      xlab = "", lwd = 2)
-abline(h=c(1e-3, 1e-2, 1e-1, 1e1, 1e2, 1e3), v=c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5), col=COLZ_grid, lty=3)
-abline(h=1)
-
-mtext("Period (y)", side = 1, line= 2, cex = cex_axis_text)
-mtext(expression("PSD ratio"), side = 4, line= 2.5, at = 1, las = 0, cex = cex_axis_text)
-
-axis(side = 1, at = c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5), labels = FALSE)
-mtext(side=1,at=c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5),line = 1,
-      c(1/0.005, 1/0.01, 1/0.02, 1/0.05,1/0.1, 1/0.2, 1/0.5),las=1,col="black", cex = cex_axis)
-axis(side = 4, at = c(1e-3,1e-2, 1e-1,1, 1e1, 1e2), labels = FALSE)
-mtext(side=4,at=c(1e-3,1e-2, 1e-1,1, 1e1, 1e2),line = 1, c(1e-3,1e-2, 0.1,1, 10, 100),las=1,col="black", cex = cex_axis)
-
-models = c("ECHAM5","GISS", "CESM","HadCM3", "isoGSM")
-for(ii in 1:5){
-  if(ii %in% c(2,3)){variable = "ITPC"}
-  else{variable = "ITIF"}
-  spec_ratio <- SPECTRA$RECD$d18O$Mean$spec
-  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$spec
-  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.1
-  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.2
-  LLines(SPECTRA$FULL[[models[ii]]]$ISOT$Mean$spec, col = adjustcolor(COLZ[ii], alpha.f = 0.2), lty = 1, lw = 2)
-}
-for(ii in 1:5){
-  if(ii %in% c(2,3)){variable = "ITPC"}
-  else{variable = "ITIF"}
-  spec_ratio <- SPECTRA$RECD$d18O$Mean$spec
-  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$spec
-  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.1
-  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.2
-  LLines(LogSmooth(SPECTRA$FULL[[models[ii]]]$ISOT$Mean$spec), col = COLZ[ii], lty = 1, lw = lw_smooth)
-}
-
-# legend("bottomleft", legend = c("HadCM3", "ECHAM5", "GISS", "CESM", "isoGSM"),
-#        text.col = COLZ, 
-#        #lwd = rep(lw_smooth,5), lty = rep(1,5), 
-#        bty = "n", cex = cex_text_legend)
-
-mtext(" c) speleo-d18O / modeled d18O (annual res.)", side = 3, line = -2, adj = 0.05, cex = cex_text)
-
-#d) inset in first plot:
-par(fig = c(0.1,0.32, 0.1, 0.5), new = T)  
-
-plot(NULL, ylim = c(0,1.3), xlim = c(log10(0.005), log10(20)), xlab = "",xaxt = 'n',
-     main = "", cex.main = cex_text, cex.axis = cex_text*1.5, bg = "white")
-rect(par('usr')[1], par('usr')[3], par('usr')[2], par('usr')[4], col = "white")
-
-mtext("  d) Variance speleo-isotopes", side = 3, line = -2, adj = 0.05, cex = cex_text)
-
-axis(side = 1, at = c(log10(0.01), log10(0.1), 0, log10(10)),
-     labels = c(0.01, 0.1, 1, 10), cex.axis = cex_text*1.5)
-mtext("‰^2", side = 1, line= 2, cex = cex_axis_text)
-lines(c(median(log10(VARIANCE$d18O), na.rm = T),median(log10(VARIANCE$d18O), na.rm = T)),
-      c(0, max(density(log10(VARIANCE$d18O), na.rm = T)$y)-0.01),
-      lwd = 2, col = "#B2182B", lty = 2)
-lines(density(log10(VARIANCE$d18O), na.rm = T),
-      lwd = 2, col = "#B2182B")
-lines(c(median(log10(VARIANCE$d13C), na.rm = T),median(log10(VARIANCE$d13C), na.rm = T)),
-      c(0, max(density(log10(VARIANCE$d13C), na.rm = T)$y)-0.01),
-      lwd = 2, col = COLZ_carbon, lty = 2)
-lines(density(log10(VARIANCE$d13C),na.rm = T),
-      lwd = 2, col = COLZ_carbon)
-abline(v=c(log10(0.01), log10(0.1), 0, log10(10)), col=COLZ_grid, lty=2)
-#abline(v=0, col = "grey60", lty = 3)
-#mtext(text = TeX("$$Var_{Rec}/Var_{Sim}$$"),side = 1,line = 2.5, cex = 1.5)
-mtext(text = "density",side = 2,line = 2.5, cex = cex_text)
-mtext(text = expression(paste(delta^{plain(18)}, plain(O))), side = 3, line = -4, adj = 1,col = "#B2182B", cex = cex_text, at = log10(5))
-mtext(text = expression(paste(delta^{plain(13)}, plain(C))), side = 3, line = -6.5, adj = 1,col = COLZ_carbon, cex = cex_text, at = log10(5))
-box(col = "black")
-
-dev.off()
-
-
-
-```
 
 Here with the filter:
 ```{r}
@@ -865,24 +544,16 @@ cex_axis = 1
 cex_axis_text = 1
 lw_smooth =3
 
-cairo_pdf(file = paste0("Plots/Supplements/Manuscript_7_Spectra_Filter.pdf"), width = 10/2*3, height = 6)
-#svg(file = paste0("Plots/Manuscript_7_Spectra.svg"), width = 10/2*3, height = 6)
+cairo_pdf(file = paste0("Plots/Supplement/SFig_9_Spectra_Filter.pdf"), width = 10/2*3, height = 6)
 
-
-#COLZ <- c("#1A2254", "#0A4296", "#278BCE","#91002B", "#D6604D", "black")
-#IPCC
-#COLZ = c("red", rgb(0,0,0), rgb(112,160,205,max = 255), rgb(196,121,0,max = 255), rgb(178,178,178,max = 255), rgb(0,52,102,max = 255))
-COLZ = c("red", rev(RColorBrewer::brewer.pal(6, "YlGnBu")[2:6]))
-#COLZ = c(rgb(112,160,205, max = 255), rgb(196,121,0, max = 255),rgb(178,178,178, max = 255),rgb(0,52,102, max = 255),rgb(0,121,0, max = 255))
 COLZ = c(rgb(112,160,205, max = 255), rgb(0,52,102, max = 255), rgb(178,178,178, max = 255),rgb(0,121,0, max = 255), rgb(196,121,0, max = 255))
 
-COLZ_carbon = "black"#rgb(33, 102, 172, max = 255)
+COLZ_carbon = "black"
 COLZ_grid = adjustcolor("grey", alpha.f = 0.5)
 
 #########################################################################################################
 par(mar=c(1,2,0,1),oma=c(3,3,3,3),xaxs="i",yaxs="i",cex=1,lwd=2, mfrow = c(1,3))
 
-# a) first plot is spec ratio btw d18O and d13C speleo
 spec_ratio <- SPECTRA$RECD$d18O$Mean$spec
 spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$RECD$d13C$Mean$spec$spec
 spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$RECD$d13C$Mean$spec$lim.1
@@ -908,10 +579,11 @@ mtext(side=2,at=c(1e-3, 1e-1, 1e1, 1e3),line = 1, c(1e-3, 0.1, 10, 1000),las=1,c
 LLines(spec_ratio, col = adjustcolor("black", alpha.f = 0.3), lty = 1, lw = 2)
 LLines(LogSmooth(spec_ratio), col = "black", lw = lw_smooth)
 
-mtext("a) speleo-d18O/d13C", side = 3, line = -2, adj = 0.05, cex = cex_text)
+mtext(TeX("a) $\\delta^{18}$O$_{speleo}$/$\\delta^{13}$C$_{speleo}"), side = 3, line = -3, adj = 0.05, cex = cex_text)
 
+###############################################################################################
 
-#b) second plot is spec ratio between speleo-d18O and downsampled d18O
+#b) second plot is spec ratio between speleo-d18O and annual d18O
 LPlot(spec_ratio, col = adjustcolor("white", alpha = 0),
       ylim = c(0.0002,100), xlim = c(1/300, 0.5),
       ylab = "",
@@ -922,46 +594,37 @@ abline(h=c(1e-3, 1e-2, 1e-1, 1e1, 1e2, 1e3), v=c(0.005, 0.01, 0.02, 0.05,0.1, 0.
 abline(h=1)
 
 mtext("Period (y)", side = 1, line= 2, cex = cex_axis_text)
-#mtext(expression("PSD [‰"^"2"*"year]"), side = 4, line= 2.5, at = 1, las = 0, cex = cex_axis_text)
+#mtext(expression("PSD ratio"), side = 4, line= 2.5, at = 1, las = 0, cex = cex_axis_text)
 
 axis(side = 1, at = c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5), labels = FALSE)
 mtext(side=1,at=c(0.005, 0.01, 0.02, 0.05,0.1, 0.2, 0.5),line = 1,
       c(1/0.005, 1/0.01, 1/0.02, 1/0.05,1/0.1, 1/0.2, 1/0.5),las=1,col="black", cex = cex_axis)
-# axis(side = 4, at = c(1e-3,1e-2, 1e-1,1, 1e1, 1e2), labels = FALSE)
-# mtext(side=4,at=c(1e-3,1e-2, 1e-1,1, 1e1, 1e2),line = 1, c(1e-3,1e-2, 0.1,1, 10, 100),las=1,col="black", cex = cex_axis)
+#axis(side = 4, at = c(1e-3,1e-2, 1e-1,1, 1e1, 1e2), labels = FALSE)
+#mtext(side=4,at=c(1e-3,1e-2, 1e-1,1, 1e1, 1e2),line = 1, c(1e-3,1e-2, 0.1,1, 10, 100),las=1,col="black", cex = cex_axis)
 
 models = c("ECHAM5","GISS", "CESM","HadCM3", "isoGSM")
 for(ii in 1:5){
-  if(ii %in% c(2,3)){variable = "ITPC"}
-  else{variable = "ITIF"}
-  #variable = "ISOT"
+  variable = "ITIF"
   spec_ratio <- SPECTRA$RECD$d18O$Mean$spec
-  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$DOWN_FILTER[[models[ii]]][[variable]]$Mean$spec$spec
-  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$DOWN_FILTER[[models[ii]]][[variable]]$Mean$spec$lim.1
-  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$DOWN_FILTER[[models[ii]]][[variable]]$Mean$spec$lim.2
+  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$spec
+  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.1
+  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.2
   LLines(spec_ratio, col = adjustcolor(COLZ[ii], alpha.f = 0.2), lty = 1, lw = 2)
 }
 for(ii in 1:5){
-  if(ii %in% c(2,3)){variable = "ITPC"}
-  else{variable = "ITIF"}
-  #variable = "ISOT"
+  variable = "ITIF"
   spec_ratio <- SPECTRA$RECD$d18O$Mean$spec
-  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$DOWN_FILTER[[models[ii]]][[variable]]$Mean$spec$spec
-  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$DOWN_FILTER[[models[ii]]][[variable]]$Mean$spec$lim.1
-  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$DOWN_FILTER[[models[ii]]][[variable]]$Mean$spec$lim.2
+  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$spec
+  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.1
+  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.2
   LLines(LogSmooth(spec_ratio), col = COLZ[ii], lty = 1, lw = lw_smooth)
 }
 
-legend("bottomleft", legend = c("ECHAM5-wiso","GISS", "iCESM","iHadCM3", "isoGSM"),
-       text.col = COLZ, 
-       #lwd = rep(lw_smooth,5), lty = rep(1,5), 
-       bty = "n", cex = cex_text_legend)
+mtext(TeX("b) $\\delta^{18}$O$_{speleo}$/$\\delta^{18}$O$_{sim}$ (annual resolution)"), side = 3, line = -3, adj = 0.05, cex = cex_text)
 
-mtext(" b) speleo-d18O / modeled d18O (record res.)", side = 3, line = -2, adj = 0.05, cex = cex_text)
-mtext(" FILTERED 2.5y", side = 3, line = -4, adj = 0.05, cex = cex_text)
+###############################################################################################
 
-
-#c) second plot is spec ratio between speleo-d18O and annual d18O
+#c) second plot is spec ratio between speleo-d18O and downsampled d18O
 LPlot(spec_ratio, col = adjustcolor("white", alpha = 0),
       ylim = c(0.0002,100), xlim = c(1/300, 0.5),
       ylab = "",
@@ -982,32 +645,30 @@ mtext(side=4,at=c(1e-3,1e-2, 1e-1,1, 1e1, 1e2),line = 1, c(1e-3,1e-2, 0.1,1, 10,
 
 models = c("ECHAM5","GISS", "CESM","HadCM3", "isoGSM")
 for(ii in 1:5){
-  if(ii %in% c(1,2,3)){variable = "ITPC"}
-  else{variable = "ITIF"}
-  #variable = "ISOT"
+  variable = "ITIF"
   spec_ratio <- SPECTRA$RECD$d18O$Mean$spec
-  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$spec
-  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.1
-  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.2
+  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$DOWN_FILTER[[models[ii]]][[variable]]$Mean$spec$spec
+  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$DOWN_FILTER[[models[ii]]][[variable]]$Mean$spec$lim.1
+  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$DOWN_FILTER[[models[ii]]][[variable]]$Mean$spec$lim.2
   LLines(spec_ratio, col = adjustcolor(COLZ[ii], alpha.f = 0.2), lty = 1, lw = 2)
 }
 for(ii in 1:5){
-  if(ii %in% c(1,2,3)){variable = "ITPC"}
-  else{variable = "ITIF"}
-  #variable = "ISOT"
+  variable = "ITIF"
   spec_ratio <- SPECTRA$RECD$d18O$Mean$spec
-  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$spec
-  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.1
-  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$FULL[[models[ii]]][[variable]]$Mean$spec$lim.2
+  spec_ratio$spec <- SPECTRA$RECD$d18O$Mean$spec$spec/SPECTRA$DOWN_FILTER[[models[ii]]][[variable]]$Mean$spec$spec
+  spec_ratio$lim.1 <- SPECTRA$RECD$d18O$Mean$spec$lim.1/SPECTRA$DOWN_FILTER[[models[ii]]][[variable]]$Mean$spec$lim.1
+  spec_ratio$lim.2 <- SPECTRA$RECD$d18O$Mean$spec$lim.2/SPECTRA$DOWN_FILTER[[models[ii]]][[variable]]$Mean$spec$lim.2
   LLines(LogSmooth(spec_ratio), col = COLZ[ii], lty = 1, lw = lw_smooth)
 }
 
-# legend("bottomleft", legend = c("HadCM3", "ECHAM5", "GISS", "CESM", "isoGSM"),
-#        text.col = COLZ, 
-#        #lwd = rep(lw_smooth,5), lty = rep(1,5), 
-#        bty = "n", cex = cex_text_legend)
+legend("bottomleft", legend = c("ECHAM5-wiso","GISS-E2-R", "iCESM","iHadCM3", "isoGSM"),
+       text.col = COLZ, 
+       bty = "n", cex = cex_text_legend)
 
-mtext(" c) speleo-d18O / modeled d18O (annual res.)", side = 3, line = -2, adj = 0.05, cex = cex_text)
+mtext(TeX("c) $\\delta^{18}$O$_{speleo}$/$\\delta^{18}$O$_{sim}$ (record resolution)"), side = 3, line = -3, adj = 0.05, cex = cex_text)
+mtext(" FILTERED 2.5y", side = 3, line = -5, adj = 0.05, cex = cex_text)
+
+###############################################################################################
 
 #d) inset in first plot:
 par(fig = c(0.1,0.32, 0.1, 0.5), new = T)  
@@ -1032,15 +693,12 @@ lines(c(median(log10(VARIANCE$d13C), na.rm = T),median(log10(VARIANCE$d13C), na.
 lines(density(log10(VARIANCE$d13C),na.rm = T),
       lwd = 2, col = COLZ_carbon)
 abline(v=c(log10(0.01), log10(0.1), 0, log10(10)), col=COLZ_grid, lty=2)
-#abline(v=0, col = "grey60", lty = 3)
-#mtext(text = TeX("$$Var_{Rec}/Var_{Sim}$$"),side = 1,line = 2.5, cex = 1.5)
+
 mtext(text = "density",side = 2,line = 2.5, cex = cex_text)
 mtext(text = expression(paste(delta^{plain(18)}, plain(O))), side = 3, line = -4, adj = 1,col = "#B2182B", cex = cex_text, at = log10(5))
 mtext(text = expression(paste(delta^{plain(13)}, plain(C))), side = 3, line = -6.5, adj = 1,col = COLZ_carbon, cex = cex_text, at = log10(5))
 box(col = "black")
 
 dev.off()
-
-
 
 ```

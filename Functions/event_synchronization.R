@@ -13,11 +13,6 @@
 #The strength Q = (C(X|Y)+C(Y|X))/\sqrt(N_x*N_y), where N_i is the number of events in each TS
 #The direction q = (C(X|Y)-C(Y|X))/\sqrt(N_x*N_y)
 
-#test_TS <- DOWN$HadCM3 %>% filter(entity_id == 242)
-#TS = list()
-#TS$time = test_TS$year_BP
-#TS$value = test_TS$d18O_dweq
-
 ident.event <- function(TS = list(time = list(), value = list()), q){
   #q in percent
   q.value_above = quantile(TS$value, probs = seq(0,1,length.out = 100), na.rm = T)[floor(100-q)]
@@ -59,13 +54,24 @@ threshold <- function(TS_time_1, e.time_1, e.time_2){
   return(max(mean(diff(TS_time_1, na.rm = T), na.rm = T), min(c(diff(e.time_1), diff(e.time_2)),na.rm = T)/2))
 }
 threshold.local <- function(e.time_1, e.time_2, ll, mm){
-  return(min(abs(e.time_1[ll+1]-e.time_1[ll]), abs(e.time_1[ll]-e.time_1[ll-1]), abs(e.time_2[mm+1]-e.time_2[mm]), abs(e.time_2[mm]-e.time_2[mm-1]),na.rm = T)/2)
+  if(ll>1 & mm>1){tau = min(abs(e.time_1[ll+1]-e.time_1[ll]), abs(e.time_1[ll]-e.time_1[ll-1]), abs(e.time_2[mm+1]-e.time_2[mm]), abs(e.time_2[mm]-e.time_2[mm-1]),na.rm = T)/2.}
+  if(ll == 1 & mm>1){tau = min(abs(e.time_1[ll+1]-e.time_1[ll]), abs(e.time_2[mm+1]-e.time_2[mm]), abs(e.time_2[mm]-e.time_2[mm-1]),na.rm = T)/2.}
+  if(ll > 1 & mm == 1){tau = min(abs(e.time_1[ll+1]-e.time_1[ll]), abs(e.time_1[ll]-e.time_1[ll-1]), abs(e.time_2[mm+1]-e.time_2[mm]),na.rm = T)/2.}
+  if(ll == 1 & mm == 1){tau = min(abs(e.time_1[ll+1]-e.time_1[ll]), abs(e.time_2[mm+1]-e.time_2[mm]),na.rm = T)/2.}
+  #hard threshold as mean uncertainty of dating...
+  if(tau>50){tau = 50}
+  return(tau)
 }
 
-co.occurence <- function(TS_1 = list(time = list(), value = list()), TS_2= list(time = list(), value = list()), q, TS_1_extreme = NULL, TS_2_extreme = NULL){
-  if(is.null(TS_1_extreme) | is.null(TS_2_extreme)){
+co.occurence <- function(TS_1 = list(time = list(), value = list()), TS_2= list(time = list(), value = list()), q, TS_1_extreme = NULL, TS_2_extreme = NULL, volc = F){
+  if(is.null(TS_1_extreme)){
     TS_1_extreme = ident.event(TS_1,q)
-    TS_2_extreme = ident.event(TS_2,q) 
+  }
+  if(is.null(TS_2_extreme)){
+    TS_2_extreme = ident.event(TS_2,q)
+  }
+  if(volc){
+    TS_2_extreme = ident.event_max(TS_2,q)
   }
   tau = threshold(TS_1$time, TS_1_extreme$time, TS_2_extreme$time)
   C = 0
@@ -88,18 +94,29 @@ synchro_time <- function(TS_1 = list(time = list(), value = list()), TS_2= list(
   
   if(is.null(TS_1_extreme)){TS_1_extreme = ident.event(TS_1,q)}
   if(is.null(TS_2_extreme)){TS_2_extreme = ident.event(TS_2,q)}
-  tau = threshold(TS_1$time, TS_1_extreme$time, TS_2_extreme$time)
   list_time = c()
+  list_tau = c()
+  #tau = threshold(TS_1$time, TS_1_extreme$time, TS_2_extreme$time)
   for(ll in 1:length(TS_1_extreme$time)){
     for(mm in 1:length(TS_2_extreme$time)){
       tau = threshold.local(TS_1_extreme$time, TS_2_extreme$time, ll, mm)
+      #tau = 0.5
       if(is.na(TS_1_extreme$time[ll]) | is.na(TS_2_extreme$time[mm])){next}
-      if(0<(TS_1_extreme$time[ll]-TS_2_extreme$time[mm]) & tau > (TS_1_extreme$time[ll]-TS_2_extreme$time[mm])){list_time = c(list_time, TS_1_extreme$time[ll])}
-      if((TS_1_extreme$time[ll]-TS_2_extreme$time[mm]) == 0){list_time = c(list_time, TS_1_extreme$time[ll])}
+      if((TS_1_extreme$time[ll]-TS_2_extreme$time[mm]) == 0){
+        list_time = c(list_time, TS_1_extreme$time[ll])
+        list_tau = c(list_tau, tau)
+        next
+        }
+      if(tau >= abs(TS_1_extreme$time[ll]-TS_2_extreme$time[mm])){
+        list_time = c(list_time, TS_1_extreme$time[ll])
+        list_tau = c(list_tau, tau)
+      }
+      
     }
   }
-  list_time = as.numeric(list_time)
-  return(list_time)
+  
+  return_list = list(list_time = as.numeric(list_time), tau = as.numeric(list_tau))
+  return(return_list)
 }
 
 synchro_time_random.cut <- function(TS_1 = list(time = list(), value = list()), TS_2= list(time = list(), value = list()), q, 
@@ -117,26 +134,39 @@ synchro_time_random.cut <- function(TS_1 = list(time = list(), value = list()), 
   
   if(is.null(TS_1_extreme)){TS_1_extreme = ident.event(TS_1,q)}
   if(is.null(TS_2_extreme)){TS_2_extreme = ident.event(TS_2,q)}
-  tau = threshold(TS_1$time, TS_1_extreme$time, TS_2_extreme$time)
   list_time = c()
+  list_tau = c()
   for(ll in 1:length(TS_1_extreme$time)){
     for(mm in 1:length(TS_2_extreme$time)){
       tau = threshold.local(TS_1_extreme$time, TS_2_extreme$time, ll, mm)
-      #tau = 1
+      #tau = 0.5
       if(is.na(TS_1_extreme$time[ll]) | is.na(TS_2_extreme$time[mm])){next}
-      if(0<(TS_1_extreme$time[ll]-TS_2_extreme$time[mm]) & tau > (TS_1_extreme$time[ll]-TS_2_extreme$time[mm])){list_time = c(list_time, TS_1_extreme$time[ll])}
-      if((TS_1_extreme$time[ll]-TS_2_extreme$time[mm]) == 0){list_time = c(list_time, TS_1_extreme$time[ll])}
+      if((TS_1_extreme$time[ll]-TS_2_extreme$time[mm]) == 0){
+        list_time = c(list_time, TS_1_extreme$time[ll])
+        list_tau = c(list_tau, tau)
+        next
+      }
+      if(tau >= abs(TS_1_extreme$time[ll]-TS_2_extreme$time[mm])){
+        list_time = c(list_time, TS_1_extreme$time[ll])
+        list_tau = c(list_tau, tau)
+      }
     }
   }
-  list_time = as.numeric(list_time)
-  return(list_time)
+  return_list = list(list_time = as.numeric(list_time), tau = as.numeric(list_tau))
+  return(return_list)
 }
 
-ES.strength <- function(TS_1 = list(time = list(), value = list()), TS_2= list(time = list(), value = list()), q, cf = F){
+ES.strength <- function(TS_1 = list(time = list(), value = list()), 
+                        TS_2= list(time = list(), value = list()), q, cf = F, volc = F){
   N_1 = length(ident.event(TS_1,q)$time)
-  N_2 = length(ident.event(TS_2,q)$time)
+  if(volc){
+    N_2 = length(ident.event_max(TS_2,q)$time)
+  }else{N_2 = length(ident.event(TS_2,q)$time)}
   
-  strength = (co.occurence(TS_1, TS_2, q)+co.occurence(TS_2, TS_1,q))/sqrt(N_1*N_2)
+
+  strength = (co.occurence(TS_1, TS_2, q, volc = volc)+co.occurence(TS_2, TS_1,q, volc = volc))/sqrt(N_1*N_2)
+  
+  
   if(cf){
     bstrap <- c()
     for (i in 1:1000){
